@@ -25,16 +25,24 @@ type VolumeSound = Phaser.Sound.BaseSound & {
   volume?: number;
 };
 
+type PlayerState = 'Normal' | 'Climbing';
+
 class MainScene extends Phaser.Scene {
   private player?: Phaser.GameObjects.Graphics;
   private keys?: PlayerKeys;
   private bgm?: VolumeSound;
   private isBgmMuted = true;
-  private isGravityEnabled = false;
+  private isGravityEnabled = true;
   private playerVelocityY = 0;
+  private playerState: PlayerState = 'Normal';
+  private isWhiteCollisionEnabled = true;
   private collisionData?: Uint8Array;
+  private ladderData?: Uint8Array;
   private collisionWidth = 0;
   private collisionHeight = 0;
+  private gravityButton?: Phaser.GameObjects.Rectangle;
+  private gravityText?: Phaser.GameObjects.Text;
+  private stateText?: Phaser.GameObjects.Text;
 
   constructor() {
     super('MainScene');
@@ -88,7 +96,7 @@ class MainScene extends Phaser.Scene {
 
     const panel = this.add.container(16, 16).setScrollFactor(0);
     const panelBackground = this.add
-      .rectangle(0, 0, 220, 196, 0x0f172a, 0.82)
+      .rectangle(0, 0, 220, 240, 0x0f172a, 0.82)
       .setOrigin(0);
     const soundLabel = this.add.text(14, 21, 'BGM', {
       fontFamily: 'Arial, Helvetica, sans-serif',
@@ -129,34 +137,48 @@ class MainScene extends Phaser.Scene {
       .rectangle(PANEL_CONTROL_X, 104, PANEL_CONTROL_WIDTH, 28, 0x475569, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
-    const gravityText = this.add.text(132, 110, 'Off', {
+    const gravityText = this.add.text(133, 110, 'On', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '14px',
       color: '#ffffff'
     });
+    this.gravityButton = gravityButton;
+    this.gravityText = gravityText;
+    gravityButton.setFillStyle(0x22c55e, 1);
 
-    const label = this.add.text(14, 153, 'Drive', {
+    const stateLabel = this.add.text(14, 153, 'Player State', {
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: '15px',
+      color: '#ffffff'
+    });
+    this.stateText = this.add.text(116, 153, 'Normal', {
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: '15px',
+      color: '#ffffff'
+    });
+
+    const label = this.add.text(14, 197, 'Drive', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '16px',
       color: '#ffffff'
     });
 
     const selectedBackground = this.add
-      .rectangle(PANEL_CONTROL_X, 148, PANEL_CONTROL_WIDTH, 32, 0x334155, 1)
+      .rectangle(PANEL_CONTROL_X, 192, PANEL_CONTROL_WIDTH, 32, 0x334155, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
-    const selectedText = this.add.text(104, 155, 'None', {
+    const selectedText = this.add.text(104, 199, 'None', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#ffffff'
     });
-    const arrow = this.add.text(184, 155, 'v', {
+    const arrow = this.add.text(184, 199, 'v', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#cbd5e1'
     });
 
-    const menu = this.add.container(PANEL_CONTROL_X, 182).setVisible(false);
+    const menu = this.add.container(PANEL_CONTROL_X, 226).setVisible(false);
     const options = [
       { label: 'None', texture: null },
       { label: 'Normal', texture: 'drive' },
@@ -201,6 +223,8 @@ class MainScene extends Phaser.Scene {
       gravityLabel,
       gravityButton,
       gravityText,
+      stateLabel,
+      this.stateText,
       label,
       selectedBackground,
       selectedText,
@@ -246,12 +270,14 @@ class MainScene extends Phaser.Scene {
     });
 
     gravityButton.on('pointerdown', () => {
+      if (this.playerState === 'Climbing') {
+        return;
+      }
+
       this.isGravityEnabled = !this.isGravityEnabled;
       this.playerVelocityY = 0;
 
-      gravityButton.setFillStyle(this.isGravityEnabled ? 0x22c55e : 0x475569, 1);
-      gravityText.setText(this.isGravityEnabled ? 'On' : 'Off');
-      gravityText.setX(this.isGravityEnabled ? 133 : 132);
+      this.updateGravityUi();
     });
   }
 
@@ -259,6 +285,8 @@ class MainScene extends Phaser.Scene {
     if (!this.player || !this.keys) {
       return;
     }
+
+    this.updatePlayerState(this.keys.W.isDown || this.keys.S.isDown);
 
     const direction = new Phaser.Math.Vector2(0, 0);
 
@@ -302,7 +330,7 @@ class MainScene extends Phaser.Scene {
       this.scale.width - PLAYER_WIDTH / 2
     );
 
-    if (!this.collidesWithMap(nextX, this.player.y)) {
+    if (!this.isWhiteCollisionEnabled || !this.collidesWithMap(nextX, this.player.y)) {
       this.player.x = nextX;
     }
 
@@ -312,11 +340,13 @@ class MainScene extends Phaser.Scene {
       this.scale.height - PLAYER_HEIGHT / 2
     );
 
-    if (!this.collidesWithMap(this.player.x, nextY)) {
+    if (!this.isWhiteCollisionEnabled || !this.collidesWithMap(this.player.x, nextY)) {
       this.player.y = nextY;
     } else if (this.isGravityEnabled && direction.y > 0) {
       this.playerVelocityY = 0;
     }
+
+    this.updatePlayerState(this.keys.W.isDown || this.keys.S.isDown);
   }
 
   private createCollisionMask() {
@@ -335,6 +365,7 @@ class MainScene extends Phaser.Scene {
 
     const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
     const collisionData = new Uint8Array(canvas.width * canvas.height);
+    const ladderData = new Uint8Array(canvas.width * canvas.height);
 
     for (let index = 0; index < collisionData.length; index += 1) {
       const pixelIndex = index * 4;
@@ -343,10 +374,16 @@ class MainScene extends Phaser.Scene {
       const b = pixels[pixelIndex + 2];
       const a = pixels[pixelIndex + 3];
 
-      collisionData[index] = r === 255 && g === 255 && b === 255 && a >= COLLISION_ALPHA_THRESHOLD ? 1 : 0;
+      if (a < COLLISION_ALPHA_THRESHOLD) {
+        continue;
+      }
+
+      collisionData[index] = r === 255 && g === 255 && b === 255 ? 1 : 0;
+      ladderData[index] = r === 255 && g === 0 && b === 0 ? 1 : 0;
     }
 
     this.collisionData = collisionData;
+    this.ladderData = ladderData;
     this.collisionWidth = canvas.width;
     this.collisionHeight = canvas.height;
   }
@@ -369,14 +406,14 @@ class MainScene extends Phaser.Scene {
     const imageData = context.createImageData(canvas.width, canvas.height);
 
     for (let index = 0; index < this.collisionData.length; index += 1) {
-      if (this.collisionData[index] !== 1) {
+      if (this.collisionData[index] !== 1 && this.ladderData?.[index] !== 1) {
         continue;
       }
 
       const pixelIndex = index * 4;
 
-      imageData.data[pixelIndex] = 255;
-      imageData.data[pixelIndex + 1] = 0;
+      imageData.data[pixelIndex] = this.ladderData?.[index] === 1 ? 255 : 255;
+      imageData.data[pixelIndex + 1] = this.ladderData?.[index] === 1 ? 120 : 0;
       imageData.data[pixelIndex + 2] = 0;
       imageData.data[pixelIndex + 3] = 140;
     }
@@ -437,6 +474,106 @@ class MainScene extends Phaser.Scene {
     }
 
     return this.collisionData[pixelY * this.collisionWidth + pixelX] === 1;
+  }
+
+  private updatePlayerState(isVerticalInputPressed: boolean) {
+    if (!this.player || !this.stateText) {
+      return;
+    }
+
+    const isTouchingLadder = this.overlapsLadder(this.player.x, this.player.y);
+    const nextState: PlayerState =
+      this.playerState === 'Normal' && (!isTouchingLadder || !isVerticalInputPressed) ? 'Normal' :
+      isTouchingLadder ? 'Climbing' : 'Normal';
+
+    if (nextState === this.playerState) {
+      return;
+    }
+
+    this.playerState = nextState;
+    this.applyPlayerState();
+  }
+
+  private applyPlayerState() {
+    if (!this.stateText) {
+      return;
+    }
+
+    if (this.playerState === 'Climbing') {
+      this.isGravityEnabled = false;
+      this.isWhiteCollisionEnabled = false;
+      this.playerVelocityY = 0;
+      this.updateGravityUi();
+      this.stateText.setText('Climbing');
+      this.stateText.setColor('#f97316');
+      return;
+    }
+
+    this.isGravityEnabled = true;
+    this.isWhiteCollisionEnabled = true;
+    this.playerVelocityY = 0;
+    this.updateGravityUi();
+    this.stateText.setText('Normal');
+    this.stateText.setColor('#ffffff');
+  }
+
+  private updateGravityUi() {
+    if (!this.gravityButton || !this.gravityText) {
+      return;
+    }
+
+    this.gravityButton.setFillStyle(this.isGravityEnabled ? 0x22c55e : 0x475569, 1);
+    this.gravityText.setText(this.isGravityEnabled ? 'On' : 'Off');
+    this.gravityText.setX(this.isGravityEnabled ? 133 : 132);
+  }
+
+  private overlapsLadder(x: number, y: number) {
+    if (!this.ladderData) {
+      return false;
+    }
+
+    const left = Math.floor(x - PLAYER_WIDTH / 2);
+    const right = Math.ceil(x + PLAYER_WIDTH / 2);
+    const top = Math.floor(y - PLAYER_HEIGHT / 2);
+    const bottom = Math.ceil(y + PLAYER_HEIGHT / 2);
+    const sampleStep = 4;
+
+    for (let sampleY = top; sampleY <= bottom; sampleY += sampleStep) {
+      for (let sampleX = left; sampleX <= right; sampleX += sampleStep) {
+        if (this.isLadderPixel(sampleX, sampleY)) {
+          return true;
+        }
+      }
+    }
+
+    for (let sampleX = left; sampleX <= right; sampleX += sampleStep) {
+      if (this.isLadderPixel(sampleX, bottom) || this.isLadderPixel(sampleX, top)) {
+        return true;
+      }
+    }
+
+    for (let sampleY = top; sampleY <= bottom; sampleY += sampleStep) {
+      if (this.isLadderPixel(left, sampleY) || this.isLadderPixel(right, sampleY)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private isLadderPixel(x: number, y: number) {
+    if (!this.ladderData) {
+      return false;
+    }
+
+    const pixelX = Math.floor(x);
+    const pixelY = Math.floor(y);
+
+    if (pixelX < 0 || pixelX >= this.collisionWidth || pixelY < 0 || pixelY >= this.collisionHeight) {
+      return false;
+    }
+
+    return this.ladderData[pixelY * this.collisionWidth + pixelX] === 1;
   }
 }
 
