@@ -10,6 +10,11 @@ const PLAYER_GRAVITY = 1100;
 const PLAYER_MAX_FALL_SPEED = 900;
 const PLAYER_STEP_HEIGHT = 24;
 const PLAYER_LADDER_EXIT_LIFT = SCENE_HEIGHT;
+const PLAYER_PROGRESS_OFFSET_X = PLAYER_WIDTH / 2 + 22;
+const PLAYER_PROGRESS_OFFSET_Y = -PLAYER_HEIGHT / 2 - 16;
+const PLAYER_PROGRESS_RADIUS = 14;
+const PLAYER_PROGRESS_LINE_WIDTH = 4;
+const PLAYER_REPAIR_PROGRESS_PER_SECOND = 0.2;
 const PLAYER_PREFAB_CHARACTER_SCALE = 2.0872;
 const PLAYER_PREFAB_PIXELS_PER_UNIT = 30;
 const PLAYER_PREFAB_ROOT_OFFSET_Y = PLAYER_HEIGHT / 2 - 8;
@@ -19,12 +24,14 @@ const COLLISION_ALPHA_THRESHOLD = 16;
 const BGM_VOLUME = 0.45;
 const PANEL_CONTROL_X = 92;
 const PANEL_CONTROL_WIDTH = 112;
+const PANEL_SLIDER_WIDTH = 78;
 
 type PlayerKeys = {
   W: Phaser.Input.Keyboard.Key;
   A: Phaser.Input.Keyboard.Key;
   S: Phaser.Input.Keyboard.Key;
   D: Phaser.Input.Keyboard.Key;
+  E: Phaser.Input.Keyboard.Key;
 };
 
 type VolumeSound = Phaser.Sound.BaseSound & {
@@ -32,7 +39,28 @@ type VolumeSound = Phaser.Sound.BaseSound & {
   volume?: number;
 };
 
-type PlayerState = 'Normal' | 'Climbing';
+type PlayerState = 'Normal' | 'Climbing' | 'Driving' | 'Driving-Repairing';
+
+type RoomLayerOption = {
+  label: string;
+  textureKey: string | null;
+  assetPath?: string;
+};
+
+type RoomConfig = {
+  id: string;
+  label: string;
+  defaultTextureKey: string;
+  maskTextureKey: string;
+  layerOptions: RoomLayerOption[];
+};
+
+type RoomMaskData = {
+  data: Uint8Array;
+  width: number;
+  height: number;
+};
+
 type PlayerPrefabAnimationName = 'Idle' | 'Walk' | 'Run' | 'Attack' | 'Jump' | 'Dance' | 'Stun' | 'Defeat';
 type PrefabAnimationNodeKey = 'body' | 'head' | 'handLeft' | 'handRight' | 'bow' | 'stunEyeLeft' | 'stunEyeRight';
 type PrefabAnimationAlphaKey = 'normalEye' | 'arrow' | 'stunEyeLeft' | 'stunEyeRight' | 'defeatEyeLeft' | 'defeatEyeRight';
@@ -86,6 +114,22 @@ type PlayerAnimationWindow = Window & {
   playPlayerAnimation?: (animationName: PlayerPrefabAnimationName) => boolean;
   getPlayerAnimationState?: () => PlayerPrefabAnimationName;
 };
+
+const ROOM_CONFIGS: RoomConfig[] = [
+  {
+    id: 'drive',
+    label: 'Drive',
+    defaultTextureKey: 'drive',
+    maskTextureKey: 'drive',
+    layerOptions: [
+      { label: 'None', textureKey: null },
+      { label: 'Normal', textureKey: 'drive', assetPath: '/assets/scene/ShipRoom/drive.png' },
+      { label: 'Wrong', textureKey: 'driveFire', assetPath: '/assets/scene/ShipRoom/driveFire.png' }
+    ]
+  }
+];
+
+const DRIVE_ROOM_CONFIG = ROOM_CONFIGS.find((room) => room.id === 'drive') ?? ROOM_CONFIGS[0];
 
 const PLAYER_PREFAB_ANIMATION_NAMES: PlayerPrefabAnimationName[] = [
   'Idle',
@@ -555,12 +599,20 @@ const PLAYER_PREFAB_ANIMATIONS: Record<PlayerPrefabAnimationName, PrefabAnimatio
 
 class MainScene extends Phaser.Scene {
   private player?: Phaser.GameObjects.Graphics;
+  private playerProgressBar?: Phaser.GameObjects.Graphics;
+  private progressSliderFill?: Phaser.GameObjects.Rectangle;
+  private progressSliderHandle?: Phaser.GameObjects.Arc;
+  private progressSliderText?: Phaser.GameObjects.Text;
+  private playerProgress = 0;
   private playerPrefabVisual?: Phaser.GameObjects.Container;
   private playerPrefabAnimationNodes?: PrefabAnimationNodes;
   private playerPrefabAnimationSprites?: PrefabAnimationSprites;
   private playerPrefabAnimationState: PlayerPrefabAnimationName = 'Idle';
   private playerPrefabAnimationTime = 0;
   private keys?: PlayerKeys;
+  private driveOverlay?: Phaser.GameObjects.Image;
+  private driveSelectedText?: Phaser.GameObjects.Text;
+  private currentDriveRoomOption = 'Normal';
   private bgm?: VolumeSound;
   private isBgmMuted = true;
   private isGravityEnabled = true;
@@ -569,11 +621,15 @@ class MainScene extends Phaser.Scene {
   private isWhiteCollisionEnabled = true;
   private collisionData?: Uint8Array;
   private ladderData?: Uint8Array;
+  private roomMasks = new Map<string, RoomMaskData>();
   private collisionWidth = 0;
   private collisionHeight = 0;
   private gravityButton?: Phaser.GameObjects.Rectangle;
   private gravityText?: Phaser.GameObjects.Text;
   private stateText?: Phaser.GameObjects.Text;
+  private timerText?: Phaser.GameObjects.Text;
+  private gameStartTime = 0;
+  private displayedGameSeconds = -1;
 
   constructor() {
     super('MainScene');
@@ -584,8 +640,13 @@ class MainScene extends Phaser.Scene {
     this.load.image('spaceShipFire', '/assets/scene/spaceShipFire.png');
     this.load.image('background', '/assets/scene/spaceShip.png');
     this.load.image('collision', '/assets/scene/physic.png');
-    this.load.image('drive', '/assets/scene/ShipRoom/drive.png');
-    this.load.image('driveFire', '/assets/scene/ShipRoom/driveFire.png');
+    ROOM_CONFIGS.forEach((room) => {
+      room.layerOptions.forEach((option) => {
+        if (option.textureKey && option.assetPath) {
+          this.load.image(option.textureKey, option.assetPath);
+        }
+      });
+    });
     this.load.image('playerPrefabShadow', '/assets/player-prefab/shadow.png');
     this.load.image('playerPrefabBody', '/assets/player-prefab/body.png');
     this.load.image('playerPrefabChest', '/assets/player-prefab/chest.png');
@@ -604,6 +665,8 @@ class MainScene extends Phaser.Scene {
 
   create() {
     const { width, height } = this.scale;
+    this.gameStartTime = this.time.now;
+    this.displayedGameSeconds = -1;
 
     const space = this.add.image(width / 2, height / 2, 'space');
     const spaceScale = Math.max(width / space.width, height / space.height);
@@ -618,11 +681,13 @@ class MainScene extends Phaser.Scene {
     background.setScale(scale).setScrollFactor(0);
 
     const driveOverlay = this.add
-      .image(width / 2, height / 2, 'drive')
+      .image(width / 2, height / 2, DRIVE_ROOM_CONFIG.defaultTextureKey)
       .setDisplaySize(SCENE_WIDTH * scale, SCENE_HEIGHT * scale)
-      .setVisible(false);
+      .setVisible(true);
+    this.driveOverlay = driveOverlay;
 
     this.createCollisionMask();
+    this.createRoomMasks();
 
     const collisionOverlay = this.createCollisionDebugOverlay(scale);
 
@@ -637,13 +702,31 @@ class MainScene extends Phaser.Scene {
       .strokeRoundedRect(-PLAYER_WIDTH / 2, -PLAYER_HEIGHT / 2, PLAYER_WIDTH, PLAYER_HEIGHT, PLAYER_WIDTH / 2)
       .setVisible(false);
     this.playerPrefabVisual = this.createPlayerPrefabVisual(this.player.x, this.player.y);
+    this.playerProgressBar = this.add.graphics();
+    this.playerProgressBar.setVisible(false);
+    this.updatePlayerProgressBar();
     this.exposePlayerAnimationInterface();
 
-    this.keys = this.input.keyboard?.addKeys('W,A,S,D') as PlayerKeys | undefined;
+    this.keys = this.input.keyboard?.addKeys('W,A,S,D,E') as PlayerKeys | undefined;
+
+    this.add
+      .rectangle(width - 16, 16, 126, 48, 0x000000, 1)
+      .setOrigin(1, 0)
+      .setScrollFactor(0);
+    this.timerText = this.add
+      .text(width - 16, 16, '00:00', {
+        fontFamily: 'Arial, Helvetica, sans-serif',
+        fontSize: '32px',
+        color: '#ffffff',
+        stroke: '#020617',
+        strokeThickness: 5
+      })
+      .setOrigin(1, 0)
+      .setScrollFactor(0);
 
     const panel = this.add.container(16, 16).setScrollFactor(0);
     const panelBackground = this.add
-      .rectangle(0, 0, 220, 328, 0x0f172a, 0.82)
+      .rectangle(0, 0, 220, 372, 0x0f172a, 0.82)
       .setOrigin(0);
     const soundLabel = this.add.text(14, 21, 'BGM', {
       fontFamily: 'Arial, Helvetica, sans-serif',
@@ -734,35 +817,54 @@ class MainScene extends Phaser.Scene {
       color: '#ffffff'
     });
 
-    const label = this.add.text(14, 285, 'Drive', {
+    const progressLabel = this.add.text(14, 285, 'Progress', {
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: '16px',
+      color: '#ffffff'
+    });
+    const progressSliderTrack = this.add
+      .rectangle(PANEL_CONTROL_X, 296, PANEL_SLIDER_WIDTH, 6, 0x334155, 1)
+      .setOrigin(0, 0.5)
+      .setInteractive(new Phaser.Geom.Rectangle(0, 0, PANEL_SLIDER_WIDTH, 16), Phaser.Geom.Rectangle.Contains);
+    this.progressSliderFill = this.add
+      .rectangle(PANEL_CONTROL_X, 296, 0, 6, 0x22c55e, 1)
+      .setOrigin(0, 0.5);
+    this.progressSliderHandle = this.add
+      .circle(PANEL_CONTROL_X, 296, 8, 0xffffff, 1)
+      .setStrokeStyle(2, 0x22c55e)
+      .setInteractive(new Phaser.Geom.Circle(8, 8, 10), Phaser.Geom.Circle.Contains);
+    this.progressSliderText = this.add.text(178, 287, '0%', {
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: '14px',
+      color: '#ffffff'
+    });
+    this.input.setDraggable(this.progressSliderHandle);
+    this.updateProgressSlider(0);
+
+    const label = this.add.text(14, 329, DRIVE_ROOM_CONFIG.label, {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '16px',
       color: '#ffffff'
     });
 
     const selectedBackground = this.add
-      .rectangle(PANEL_CONTROL_X, 280, PANEL_CONTROL_WIDTH, 32, 0x334155, 1)
+      .rectangle(PANEL_CONTROL_X, 324, PANEL_CONTROL_WIDTH, 32, 0x334155, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
-    const selectedText = this.add.text(104, 287, 'None', {
+    const selectedText = this.add.text(104, 331, 'Normal', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#ffffff'
     });
-    const arrow = this.add.text(184, 287, 'v', {
+    this.driveSelectedText = selectedText;
+    const arrow = this.add.text(184, 331, 'v', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#cbd5e1'
     });
 
-    const menu = this.add.container(PANEL_CONTROL_X, 314).setVisible(false);
-    const options = [
-      { label: 'None', texture: null },
-      { label: 'Normal', texture: 'drive' },
-      { label: 'Wrong', texture: 'driveFire' }
-    ];
-
-    options.forEach((option, index) => {
+    const menu = this.add.container(PANEL_CONTROL_X, 358).setVisible(false);
+    DRIVE_ROOM_CONFIG.layerOptions.forEach((option, index) => {
       const optionY = index * 30;
       const optionBackground = this.add
         .rectangle(0, optionY, 112, 30, 0x1e293b, 1)
@@ -775,15 +877,8 @@ class MainScene extends Phaser.Scene {
       });
 
       optionBackground.on('pointerdown', () => {
-        selectedText.setText(option.label);
         menu.setVisible(false);
-
-        if (!option.texture) {
-          driveOverlay.setVisible(false);
-          return;
-        }
-
-        driveOverlay.setTexture(option.texture).setVisible(true);
+        this.setDriveRoomOption(option.label);
       });
 
       menu.add([optionBackground, optionLabel]);
@@ -808,6 +903,11 @@ class MainScene extends Phaser.Scene {
       shipFireLabel,
       shipFireButton,
       shipFireText,
+      progressLabel,
+      progressSliderTrack,
+      this.progressSliderFill,
+      this.progressSliderHandle,
+      this.progressSliderText,
       label,
       selectedBackground,
       selectedText,
@@ -836,6 +936,17 @@ class MainScene extends Phaser.Scene {
       shipFireText.setText(isVisible ? 'Visible' : 'Hidden');
       shipFireText.setX(isVisible ? 130 : 127);
     });
+
+    const setProgressFromPointer = (pointer: Phaser.Input.Pointer) => {
+      const sliderStartX = panel.x + PANEL_CONTROL_X;
+      const progress = Phaser.Math.Clamp((pointer.x - sliderStartX) / PANEL_SLIDER_WIDTH, 0, 1);
+
+      this.setPlayerProgress(progress);
+    };
+
+    progressSliderTrack.on('pointerdown', setProgressFromPointer);
+    this.progressSliderHandle.on('pointerdown', setProgressFromPointer);
+    this.progressSliderHandle.on('drag', setProgressFromPointer);
 
     muteButton.on('pointerdown', () => {
       if (!this.bgm) {
@@ -882,13 +993,15 @@ class MainScene extends Phaser.Scene {
     });
   }
 
-  update(_: number, delta: number) {
+  update(time: number, delta: number) {
     if (!this.player || !this.keys) {
       return;
     }
 
+    this.updateGameTimer(time);
     this.updatePlayerPrefabAnimation(delta);
     this.updatePlayerState(this.keys.W.isDown || this.keys.S.isDown);
+    this.updateRepairProgress(delta);
 
     const direction = new Phaser.Math.Vector2(0, 0);
 
@@ -928,6 +1041,7 @@ class MainScene extends Phaser.Scene {
 
     if (direction.x === 0 && direction.y === 0) {
       this.syncPlayerPrefabVisual();
+      this.updatePlayerProgressBar();
       return;
     }
 
@@ -963,6 +1077,7 @@ class MainScene extends Phaser.Scene {
 
     this.updatePlayerState(this.keys.W.isDown || this.keys.S.isDown);
     this.syncPlayerPrefabVisual();
+    this.updatePlayerProgressBar();
   }
 
   private createPlayerPrefabVisual(x: number, y: number) {
@@ -1082,6 +1197,110 @@ class MainScene extends Phaser.Scene {
     this.playerPrefabVisual.setPosition(this.player.x, this.player.y);
   }
 
+  private updatePlayerProgressBar() {
+    if (!this.player || !this.playerProgressBar) {
+      return;
+    }
+
+    if (!this.isRepairingState(this.playerState)) {
+      this.playerProgressBar.clear().setVisible(false);
+      this.updateProgressSlider(this.playerProgress);
+      return;
+    }
+
+    this.playerProgressBar
+      .setVisible(true)
+      .setPosition(this.player.x + PLAYER_PROGRESS_OFFSET_X, this.player.y + PLAYER_PROGRESS_OFFSET_Y)
+      .clear()
+      .fillStyle(0x000000, 0.75)
+      .fillCircle(0, 0, PLAYER_PROGRESS_RADIUS + PLAYER_PROGRESS_LINE_WIDTH)
+      .lineStyle(PLAYER_PROGRESS_LINE_WIDTH, 0x475569, 1)
+      .strokeCircle(0, 0, PLAYER_PROGRESS_RADIUS)
+      .lineStyle(PLAYER_PROGRESS_LINE_WIDTH, 0x22c55e, 1)
+      .beginPath()
+      .arc(
+        0,
+        0,
+        PLAYER_PROGRESS_RADIUS,
+        -Math.PI / 2,
+        -Math.PI / 2 + Math.PI * 2 * this.playerProgress,
+        false
+      )
+      .strokePath();
+
+    this.updateProgressSlider(this.playerProgress);
+  }
+
+  private setPlayerProgress(progress: number) {
+    this.playerProgress = Phaser.Math.Clamp(progress, 0, 1);
+    this.updatePlayerProgressBar();
+  }
+
+  private updateRepairProgress(delta: number) {
+    if (this.playerState !== 'Driving-Repairing' || !this.keys?.E.isDown) {
+      return;
+    }
+
+    this.setPlayerProgress(this.playerProgress + PLAYER_REPAIR_PROGRESS_PER_SECOND * (delta / 1000));
+
+    if (this.playerProgress < 1) {
+      return;
+    }
+
+    this.setDriveRoomOption('Normal');
+    this.setPlayerProgress(0);
+    this.playerState = this.overlapsCurrentDriveRoom() ? 'Driving' : 'Normal';
+    this.applyPlayerState();
+    this.updatePlayerProgressBar();
+  }
+
+  private updateProgressSlider(progress: number) {
+    if (!this.progressSliderFill || !this.progressSliderHandle || !this.progressSliderText) {
+      return;
+    }
+
+    const clampedProgress = Phaser.Math.Clamp(progress, 0, 1);
+    const fillWidth = PANEL_SLIDER_WIDTH * clampedProgress;
+
+    this.progressSliderFill.setDisplaySize(fillWidth, 6);
+    this.progressSliderHandle.setX(PANEL_CONTROL_X + fillWidth);
+    this.progressSliderText.setText(`${Math.round(clampedProgress * 100)}%`);
+  }
+
+  private setDriveRoomOption(label: string) {
+    const option = DRIVE_ROOM_CONFIG.layerOptions.find((roomOption) => roomOption.label === label);
+
+    if (!option || !this.driveOverlay || !this.driveSelectedText) {
+      return;
+    }
+
+    this.currentDriveRoomOption = option.label;
+    this.driveSelectedText.setText(option.label);
+
+    if (!option.textureKey) {
+      this.driveOverlay.setVisible(false);
+      return;
+    }
+
+    this.driveOverlay.setTexture(option.textureKey).setVisible(true);
+  }
+
+  private isRepairingState(state: PlayerState) {
+    return state.endsWith('-Repairing');
+  }
+
+  private isDriveRoomWrong() {
+    return this.currentDriveRoomOption === 'Wrong';
+  }
+
+  private overlapsCurrentDriveRoom() {
+    if (!this.player) {
+      return false;
+    }
+
+    return this.overlapsRoom(DRIVE_ROOM_CONFIG, this.player.x, this.player.y);
+  }
+
   private setPlayerPrefabFacing(facingX: -1 | 1) {
     if (!this.playerPrefabVisual || this.playerPrefabVisual.scaleX === facingX) {
       return;
@@ -1114,6 +1333,25 @@ class MainScene extends Phaser.Scene {
 
     animationWindow.playPlayerAnimation = (animationName) => this.playPlayerPrefabAnimation(animationName);
     animationWindow.getPlayerAnimationState = () => this.getPlayerPrefabAnimationState();
+  }
+
+  private updateGameTimer(time: number) {
+    if (!this.timerText) {
+      return;
+    }
+
+    const elapsedSeconds = Math.floor((time - this.gameStartTime) / 1000);
+
+    if (elapsedSeconds === this.displayedGameSeconds) {
+      return;
+    }
+
+    this.displayedGameSeconds = elapsedSeconds;
+
+    const minutes = Math.floor(elapsedSeconds / 60).toString().padStart(2, '0');
+    const seconds = (elapsedSeconds % 60).toString().padStart(2, '0');
+
+    this.timerText.setText(`${minutes}:${seconds}`);
   }
 
   private updatePlayerPrefabAnimation(delta: number) {
@@ -1262,6 +1500,40 @@ class MainScene extends Phaser.Scene {
     this.collisionHeight = canvas.height;
   }
 
+  private createRoomMasks() {
+    this.roomMasks.clear();
+
+    ROOM_CONFIGS.forEach((room) => {
+      const source = this.textures.get(room.maskTextureKey).getSourceImage() as HTMLImageElement;
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d', { willReadFrequently: true });
+
+      canvas.width = source.width;
+      canvas.height = source.height;
+
+      if (!context) {
+        return;
+      }
+
+      context.drawImage(source, 0, 0);
+
+      const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+      const data = new Uint8Array(canvas.width * canvas.height);
+
+      for (let index = 0; index < data.length; index += 1) {
+        const alpha = pixels[index * 4 + 3];
+
+        data[index] = alpha >= COLLISION_ALPHA_THRESHOLD ? 1 : 0;
+      }
+
+      this.roomMasks.set(room.id, {
+        data,
+        width: canvas.width,
+        height: canvas.height
+      });
+    });
+  }
+
   private createCollisionDebugOverlay(scale: number) {
     if (!this.collisionData) {
       return undefined;
@@ -1336,7 +1608,7 @@ class MainScene extends Phaser.Scene {
   }
 
   private tryStepUp(nextX: number, currentY: number) {
-    if (!this.isWhiteCollisionEnabled || this.playerState !== 'Normal') {
+    if (!this.isWhiteCollisionEnabled || this.playerState === 'Climbing') {
       return undefined;
     }
 
@@ -1372,15 +1644,18 @@ class MainScene extends Phaser.Scene {
     }
 
     const isTouchingLadder = this.overlapsLadder(this.player.x, this.player.y);
+    const isInsideDriveRoom = this.overlapsRoom(DRIVE_ROOM_CONFIG, this.player.x, this.player.y);
     const nextState: PlayerState =
-      this.playerState === 'Normal' && (!isTouchingLadder || !isVerticalInputPressed) ? 'Normal' :
-      isTouchingLadder ? 'Climbing' : 'Normal';
+      isTouchingLadder && isVerticalInputPressed ? 'Climbing' :
+      this.playerState === 'Driving-Repairing' && isInsideDriveRoom ? 'Driving-Repairing' :
+      this.playerState === 'Driving' && isInsideDriveRoom && this.isDriveRoomWrong() && this.keys?.E.isDown ? 'Driving-Repairing' :
+      isInsideDriveRoom ? 'Driving' : 'Normal';
 
     if (nextState === this.playerState) {
       return;
     }
 
-    if(this.playerState==='Climbing' && nextState==='Normal'){
+    if(this.playerState==='Climbing' ){
       this.liftPlayerOutOfLadder();
     }
 
@@ -1400,6 +1675,29 @@ class MainScene extends Phaser.Scene {
       this.updateGravityUi();
       this.stateText.setText('Climbing');
       this.stateText.setColor('#f97316');
+      this.updatePlayerProgressBar();
+      return;
+    }
+
+    if (this.playerState === 'Driving') {
+      this.isGravityEnabled = true;
+      this.isWhiteCollisionEnabled = true;
+      this.playerVelocityY = 0;
+      this.updateGravityUi();
+      this.stateText.setText('Driving');
+      this.stateText.setColor('#22c55e');
+      this.updatePlayerProgressBar();
+      return;
+    }
+
+    if (this.playerState === 'Driving-Repairing') {
+      this.isGravityEnabled = true;
+      this.isWhiteCollisionEnabled = true;
+      this.playerVelocityY = 0;
+      this.updateGravityUi();
+      this.stateText.setText('Driving-Repairing');
+      this.stateText.setColor('#86efac');
+      this.updatePlayerProgressBar();
       return;
     }
 
@@ -1409,6 +1707,7 @@ class MainScene extends Phaser.Scene {
     this.updateGravityUi();
     this.stateText.setText('Normal');
     this.stateText.setColor('#ffffff');
+    this.updatePlayerProgressBar();
   }
 
   private updateGravityUi() {
@@ -1438,6 +1737,53 @@ class MainScene extends Phaser.Scene {
         return;
       }
     }
+  }
+
+  private overlapsRoom(room: RoomConfig, x: number, y: number) {
+    const mask = this.roomMasks.get(room.id);
+
+    if (!mask) {
+      return false;
+    }
+
+    const left = Math.floor(x - PLAYER_WIDTH / 2);
+    const right = Math.ceil(x + PLAYER_WIDTH / 2);
+    const top = Math.floor(y - PLAYER_HEIGHT / 2);
+    const bottom = Math.ceil(y + PLAYER_HEIGHT / 2);
+    const sampleStep = 4;
+
+    for (let sampleY = top; sampleY <= bottom; sampleY += sampleStep) {
+      for (let sampleX = left; sampleX <= right; sampleX += sampleStep) {
+        if (this.isRoomMaskPixel(mask, sampleX, sampleY)) {
+          return true;
+        }
+      }
+    }
+
+    for (let sampleX = left; sampleX <= right; sampleX += sampleStep) {
+      if (this.isRoomMaskPixel(mask, sampleX, bottom) || this.isRoomMaskPixel(mask, sampleX, top)) {
+        return true;
+      }
+    }
+
+    for (let sampleY = top; sampleY <= bottom; sampleY += sampleStep) {
+      if (this.isRoomMaskPixel(mask, left, sampleY) || this.isRoomMaskPixel(mask, right, sampleY)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private isRoomMaskPixel(mask: RoomMaskData, x: number, y: number) {
+    const pixelX = Math.floor(x);
+    const pixelY = Math.floor(y);
+
+    if (pixelX < 0 || pixelX >= mask.width || pixelY < 0 || pixelY >= mask.height) {
+      return false;
+    }
+
+    return mask.data[pixelY * mask.width + pixelX] === 1;
   }
 
   private overlapsLadder(x: number, y: number) {
