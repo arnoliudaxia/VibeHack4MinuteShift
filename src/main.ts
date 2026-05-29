@@ -9,6 +9,7 @@ const PLAYER_SPEED = 260;
 const PLAYER_GRAVITY = 1100;
 const PLAYER_MAX_FALL_SPEED = 900;
 const PLAYER_STEP_HEIGHT = 24;
+const PLAYER_LADDER_EXIT_LIFT = SCENE_HEIGHT;
 const COLLISION_ALPHA_THRESHOLD = 16;
 const BGM_VOLUME = 0.45;
 const PANEL_CONTROL_X = 92;
@@ -515,6 +516,10 @@ class MainScene extends Phaser.Scene {
       return;
     }
 
+    if(this.playerState==='Climbing' && nextState==='Normal'){
+      this.liftPlayerOutOfLadder();
+    }
+
     this.playerState = nextState;
     this.applyPlayerState();
   }
@@ -550,6 +555,25 @@ class MainScene extends Phaser.Scene {
     this.gravityButton.setFillStyle(this.isGravityEnabled ? 0x22c55e : 0x475569, 1);
     this.gravityText.setText(this.isGravityEnabled ? 'On' : 'Off');
     this.gravityText.setX(this.isGravityEnabled ? 133 : 132);
+  }
+
+  private liftPlayerOutOfLadder() {
+    if (!this.player) {
+      return;
+    }
+    console.log(`Attempting to lift player out of ladder from y=${this.player.y}`)
+
+    for (let lift = 1; lift <= PLAYER_LADDER_EXIT_LIFT; lift += 1) {
+      const testY = this.player.y - lift;
+
+      if (!this.collidesWithMap(this.player.x, testY)) {
+    console.log('Lifting player out of ladder');
+        this.player.y = testY;
+        this.playerVelocityY = 0;
+    console.log(`Attempting to lift player out of ladder to y=${this.player.y}`)
+        return;
+      }
+    }
   }
 
   private overlapsLadder(x: number, y: number) {
