@@ -114,10 +114,11 @@ ladderData[index] = r === 255 && g === 0 && b === 0 ? 1 : 0;
 
 ### 玩家状态机
 
-当前玩家状态有四个：
+当前玩家状态有五个：
 
 - `Normal`
 - `Climbing`
+- `Healing`
 - `Driving`
 - `Driving-Repairing`
 
@@ -126,6 +127,11 @@ ladderData[index] = r === 255 && g === 0 && b === 0 ? 1 : 0;
 ```mermaid
 stateDiagram-v2
     [*] --> Normal
+
+    Normal --> Healing: overlapsHealRoom
+    Climbing --> Healing: overlapsHealRoom
+    Healing --> Healing: overlapsHealRoom
+    Healing --> Normal: !overlapsHealRoom
 
     Climbing --> Climbing: overlapsLadder
     Normal --> Climbing: overlapsLadder && (W || S)
@@ -160,6 +166,12 @@ stateDiagram-v2
 - `A` / `D` 仍然响应，允许左右移动。
 - 已处于 `Climbing` 时，只要下一帧仍接触红色 `#FF0000` 区域，就保持 `Climbing`，不再要求持续按 `W` 或 `S`。
 - 玩家离开红色 `#FF0000` 区域时，切回 `Normal`。
+
+`Healing` 状态规则：
+
+- 玩家从 `Normal` 或 `Climbing` 进入 Heal 房间 alpha mask 区域时切换到该状态。
+- 在 `Healing` 中生命值以 `15/s` 增加，最高不超过 `100`。
+- 玩家离开 Heal 房间时切回 `Normal`。
 
 `Driving` 状态规则：
 

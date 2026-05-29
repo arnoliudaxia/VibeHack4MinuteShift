@@ -1,11 +1,15 @@
 import Phaser from 'phaser';
 import './style.css';
 
+// 场景设置
 const SCENE_WIDTH = 1672;
 const SCENE_HEIGHT = 941;
+
+// player设置
 const PLAYER_WIDTH = 38;
 const PLAYER_HEIGHT = 72;
 const PLAYER_MAX_HEALTH = 100;
+const PLAYER_HEAL_PER_SECOND = 15;
 const PLAYER_HEALTH_BAR_WIDTH = 44;
 const PLAYER_HEALTH_BAR_HEIGHT = 7;
 const PLAYER_HEALTH_BAR_OFFSET_Y = -PLAYER_HEIGHT / 2 - 14;
@@ -24,13 +28,32 @@ const PLAYER_PREFAB_ROOT_OFFSET_Y = PLAYER_HEIGHT / 2 - 8;
 const PLAYER_PREFAB_SKIN_TINT = 0xfac9ac;
 const PLAYER_PREFAB_HAIR_TINT = 0x7de8a7;
 const COLLISION_ALPHA_THRESHOLD = 16;
+
+// 音乐设置
 const BGM_VOLUME = 0.45;
+// UI 设置
 const PANEL_CONTROL_X = 92;
 const PANEL_CONTROL_WIDTH = 112;
 const PANEL_SLIDER_WIDTH = 78;
 const SECOND_CLOCK_OFFSET_X = 174;
 const SECOND_CLOCK_OFFSET_Y = 40;
 const SECOND_CLOCK_RADIUS = 24;
+
+// 陨石设置
+const ASTEROID_MIN_SPAWN_DELAY = 300;
+const ASTEROID_MAX_SPAWN_DELAY = 1600;
+const ASTEROID_MIN_SPEED = 80;
+const ASTEROID_MAX_SPEED = 220;
+const ASTEROID_MIN_SCALE = 0.7;
+const ASTEROID_MAX_SCALE = 1.5;
+
+const ASTEROID_ASSETS = [
+  { key: 'asteroidGreyTiny', path: '/assets/scene/SpcaeElements/asteroid_grey_tiny.png' },
+  { key: 'asteroidTiny', path: '/assets/scene/SpcaeElements/asteroid_tiny.png' },
+  { key: 'pixelAsteroid', path: '/assets/scene/SpcaeElements/pixel_asteroid.png' }
+];
+
+// 操控
 
 type PlayerKeys = {
   W: Phaser.Input.Keyboard.Key;
@@ -45,7 +68,12 @@ type VolumeSound = Phaser.Sound.BaseSound & {
   volume?: number;
 };
 
-type PlayerState = 'Normal' | 'Climbing' | 'Driving' | 'Driving-Repairing';
+type AsteroidSprite = Phaser.GameObjects.Image & {
+  velocityX: number;
+  rotationSpeed: number;
+};
+
+type PlayerState = 'Normal' | 'Climbing' | 'Healing' | 'Driving' | 'Driving-Repairing';
 
 type RoomLayerOption = {
   label: string;
@@ -141,11 +169,21 @@ const ROOM_CONFIGS: RoomConfig[] = [
     layerOptions: [
       { label: 'Normal', textureKey: 'heal', assetPath: '/assets/scene/ShipRoom/heal.png' }
     ]
+  },
+  {
+    id: 'workshop',
+    label: 'Workshop',
+    defaultTextureKey: 'workshop',
+    maskTextureKey: 'workshop',
+    layerOptions: [
+      { label: 'Normal', textureKey: 'workshop', assetPath: '/assets/scene/ShipRoom/workshop.png' }
+    ]
   }
 ];
 
 const DRIVE_ROOM_CONFIG = ROOM_CONFIGS.find((room) => room.id === 'drive') ?? ROOM_CONFIGS[0];
 const HEAL_ROOM_CONFIG = ROOM_CONFIGS.find((room) => room.id === 'heal') ?? ROOM_CONFIGS[0];
+const WORKSHOP_ROOM_CONFIG = ROOM_CONFIGS.find((room) => room.id === 'workshop') ?? ROOM_CONFIGS[0];
 
 const PLAYER_PREFAB_ANIMATION_NAMES: PlayerPrefabAnimationName[] = [
   'Idle',
@@ -647,6 +685,9 @@ class MainScene extends Phaser.Scene {
   private stateText?: Phaser.GameObjects.Text;
   private timerText?: Phaser.GameObjects.Text;
   private secondClock?: Phaser.GameObjects.Graphics;
+  private asteroids: AsteroidSprite[] = [];
+  private asteroidSpawnTimer = 0;
+  private nextAsteroidSpawnDelay = 0;
   private gameStartTime = 0;
   private displayedGameSeconds = -1;
 
@@ -659,6 +700,9 @@ class MainScene extends Phaser.Scene {
     this.load.image('spaceShipFire', '/assets/scene/spaceShipFire.png');
     this.load.image('background', '/assets/scene/spaceShip.png');
     this.load.image('collision', '/assets/scene/physic.png');
+    ASTEROID_ASSETS.forEach((asset) => {
+      this.load.image(asset.key, asset.path);
+    });
     ROOM_CONFIGS.forEach((room) => {
       room.layerOptions.forEach((option) => {
         if (option.textureKey && option.assetPath) {
@@ -689,6 +733,7 @@ class MainScene extends Phaser.Scene {
     const space = this.add.image(width / 2, height / 2, 'space');
     const spaceScale = Math.max(width / space.width, height / space.height);
     space.setScale(spaceScale).setScrollFactor(0);
+    this.nextAsteroidSpawnDelay = Phaser.Math.Between(ASTEROID_MIN_SPAWN_DELAY, ASTEROID_MAX_SPAWN_DELAY);
 
     const spaceShipFire = this.add.image(width / 2, height / 2, 'spaceShipFire');
     const fireScale = Math.max(width / spaceShipFire.width, height / spaceShipFire.height);
@@ -700,6 +745,11 @@ class MainScene extends Phaser.Scene {
 
     this.add
       .image(width / 2, height / 2, HEAL_ROOM_CONFIG.defaultTextureKey)
+      .setDisplaySize(SCENE_WIDTH * scale, SCENE_HEIGHT * scale)
+      .setVisible(true);
+
+    this.add
+      .image(width / 2, height / 2, WORKSHOP_ROOM_CONFIG.defaultTextureKey)
       .setDisplaySize(SCENE_WIDTH * scale, SCENE_HEIGHT * scale)
       .setVisible(true);
 
@@ -1021,6 +1071,8 @@ class MainScene extends Phaser.Scene {
   }
 
   update(time: number, delta: number) {
+    this.updateAsteroids(delta);
+
     if (!this.player || !this.keys) {
       return;
     }
@@ -1029,6 +1081,7 @@ class MainScene extends Phaser.Scene {
     this.updatePlayerPrefabAnimation(delta);
     this.updatePlayerState(this.keys.W.isDown || this.keys.S.isDown);
     this.updateRepairProgress(delta);
+    this.updateHealing(delta);
 
     const direction = new Phaser.Math.Vector2(0, 0);
 
@@ -1223,6 +1276,49 @@ class MainScene extends Phaser.Scene {
     this.playerPrefabVisual.setPosition(this.player.x, this.player.y);
   }
 
+  private updateAsteroids(delta: number) {
+    this.asteroidSpawnTimer += delta;
+
+    if (this.asteroidSpawnTimer >= this.nextAsteroidSpawnDelay) {
+      this.spawnAsteroid();
+      this.asteroidSpawnTimer = 0;
+      this.nextAsteroidSpawnDelay = Phaser.Math.Between(ASTEROID_MIN_SPAWN_DELAY, ASTEROID_MAX_SPAWN_DELAY);
+    }
+
+    const deltaSeconds = delta / 1000;
+
+    for (let index = this.asteroids.length - 1; index >= 0; index -= 1) {
+      const asteroid = this.asteroids[index];
+
+      asteroid.x += asteroid.velocityX * deltaSeconds;
+      asteroid.rotation += asteroid.rotationSpeed * deltaSeconds;
+
+      if (asteroid.x + asteroid.displayWidth / 2 >= -40) {
+        continue;
+      }
+
+      asteroid.destroy();
+      this.asteroids.splice(index, 1);
+    }
+  }
+
+  private spawnAsteroid() {
+    const asteroidAsset = Phaser.Utils.Array.GetRandom(ASTEROID_ASSETS);
+    const asteroid = this.add.image(
+      this.scale.width + 80,
+      Phaser.Math.Between(840, 1000),
+      asteroidAsset.key
+    ) as AsteroidSprite;
+
+    asteroid
+      .setScale(Phaser.Math.FloatBetween(ASTEROID_MIN_SCALE, ASTEROID_MAX_SCALE))
+      .setAlpha(Phaser.Math.FloatBetween(0.65, 1));
+    asteroid.velocityX = -Phaser.Math.Between(ASTEROID_MIN_SPEED, ASTEROID_MAX_SPEED);
+    asteroid.rotationSpeed = Phaser.Math.FloatBetween(-1.2, 1.2);
+
+    this.asteroids.push(asteroid);
+  }
+
   private updatePlayerHealthBar() {
     if (!this.player || !this.playerHealthBar) {
       return;
@@ -1242,6 +1338,19 @@ class MainScene extends Phaser.Scene {
       .fillRoundedRect(x, y, PLAYER_HEALTH_BAR_WIDTH * healthRatio, PLAYER_HEALTH_BAR_HEIGHT, 2)
       .lineStyle(1, 0xffffff, 0.8)
       .strokeRoundedRect(x, y, PLAYER_HEALTH_BAR_WIDTH, PLAYER_HEALTH_BAR_HEIGHT, 2);
+  }
+
+  private setPlayerHealth(health: number) {
+    this.playerHealth = Phaser.Math.Clamp(health, 0, PLAYER_MAX_HEALTH);
+    this.updatePlayerHealthBar();
+  }
+
+  private updateHealing(delta: number) {
+    if (this.playerState !== 'Healing' || this.playerHealth >= PLAYER_MAX_HEALTH) {
+      return;
+    }
+
+    this.setPlayerHealth(this.playerHealth + PLAYER_HEAL_PER_SECOND * (delta / 1000));
   }
 
   private updatePlayerProgressBar() {
@@ -1733,8 +1842,11 @@ class MainScene extends Phaser.Scene {
     }
 
     const isTouchingLadder = this.overlapsLadder(this.player.x, this.player.y);
+    const isInsideHealRoom = this.overlapsRoom(HEAL_ROOM_CONFIG, this.player.x, this.player.y);
     const isInsideDriveRoom = this.overlapsRoom(DRIVE_ROOM_CONFIG, this.player.x, this.player.y);
     const nextState: PlayerState =
+      this.playerState === 'Healing' && !isInsideHealRoom ? 'Normal' :
+      (this.playerState === 'Healing' || this.playerState === 'Normal' || this.playerState === 'Climbing') && isInsideHealRoom ? 'Healing' :
       this.playerState === 'Climbing' && isTouchingLadder ? 'Climbing' :
       isTouchingLadder && isVerticalInputPressed ? 'Climbing' :
       this.playerState === 'Driving-Repairing' && isInsideDriveRoom ? 'Driving-Repairing' :
@@ -1765,6 +1877,17 @@ class MainScene extends Phaser.Scene {
       this.updateGravityUi();
       this.stateText.setText('Climbing');
       this.stateText.setColor('#f97316');
+      this.updatePlayerProgressBar();
+      return;
+    }
+
+    if (this.playerState === 'Healing') {
+      this.isGravityEnabled = true;
+      this.isWhiteCollisionEnabled = true;
+      this.playerVelocityY = 0;
+      this.updateGravityUi();
+      this.stateText.setText('Healing');
+      this.stateText.setColor('#38bdf8');
       this.updatePlayerProgressBar();
       return;
     }
