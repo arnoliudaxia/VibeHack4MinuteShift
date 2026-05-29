@@ -77,6 +77,7 @@ this.load.image('background', '/assets/scene/spaceShip.png');
 
 - `#FFFFFF`：实体碰撞层。玩家在启用白色碰撞检测时不能穿过该区域。
 - `#FF0000`：梯子触发层。该区域本身不阻挡玩家移动，用于检测玩家是否进入爬梯状态。
+- 房间自身贴图 alpha mask：用于房间区域状态检测，例如 `drive.png` 的非透明像素用于检测玩家是否进入 `Driving` 状态；该 mask 不阻挡玩家移动。
 - 透明像素或其他颜色：无物理语义，默认忽略。
 
 读取像素时会忽略 alpha 过低的像素，当前阈值为：
@@ -113,10 +114,12 @@ ladderData[index] = r === 255 && g === 0 && b === 0 ? 1 : 0;
 
 ### 玩家状态机
 
-当前玩家状态有两个：
+当前玩家状态有四个：
 
 - `Normal`
 - `Climbing`
+- `Driving`
+- `Driving-Repairing`
 
 `Normal` 状态规则：
 
@@ -131,6 +134,19 @@ ladderData[index] = r === 255 && g === 0 && b === 0 ? 1 : 0;
 - 白色 `#FFFFFF` 碰撞检测关闭。
 - `A` / `D` 仍然响应，允许左右移动。
 - 玩家离开红色 `#FF0000` 区域时，切回 `Normal`。
+
+`Driving` 状态规则：
+
+- 玩家进入 Drive 房间 alpha mask 区域时切换到该状态。
+- Drive mask 只用于状态检测，不阻挡玩家移动。
+- 玩家离开 Drive mask 区域时切回 `Normal`。
+- 当 Drive 房间处于 `Wrong` 状态时，在 `Driving` 状态下按 `E` 会进入 `Driving-Repairing`。
+
+`Driving-Repairing` 状态规则：
+
+- 玩家进度条在该状态下显示，其他状态默认隐藏。
+- 按住 `E` 会以每秒 20% 的速度增加维修进度。
+- 维修进度满时，进度归零并隐藏，Drive 房间状态从 `Wrong` 切回 `Normal`。
 
 UI 中的 `Player State` 会显示当前状态。
 

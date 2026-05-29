@@ -9,7 +9,6 @@ const PLAYER_SPEED = 260;
 const PLAYER_GRAVITY = 1100;
 const PLAYER_MAX_FALL_SPEED = 900;
 const PLAYER_STEP_HEIGHT = 24;
-const PLAYER_LADDER_EXIT_LIFT = SCENE_HEIGHT;
 const PLAYER_PROGRESS_OFFSET_X = PLAYER_WIDTH / 2 + 22;
 const PLAYER_PROGRESS_OFFSET_Y = -PLAYER_HEIGHT / 2 - 16;
 const PLAYER_PROGRESS_RADIUS = 14;
@@ -25,6 +24,9 @@ const BGM_VOLUME = 0.45;
 const PANEL_CONTROL_X = 92;
 const PANEL_CONTROL_WIDTH = 112;
 const PANEL_SLIDER_WIDTH = 78;
+const SECOND_CLOCK_OFFSET_X = 174;
+const SECOND_CLOCK_OFFSET_Y = 40;
+const SECOND_CLOCK_RADIUS = 24;
 
 type PlayerKeys = {
   W: Phaser.Input.Keyboard.Key;
@@ -628,6 +630,7 @@ class MainScene extends Phaser.Scene {
   private gravityText?: Phaser.GameObjects.Text;
   private stateText?: Phaser.GameObjects.Text;
   private timerText?: Phaser.GameObjects.Text;
+  private secondClock?: Phaser.GameObjects.Graphics;
   private gameStartTime = 0;
   private displayedGameSeconds = -1;
 
@@ -647,7 +650,6 @@ class MainScene extends Phaser.Scene {
         }
       });
     });
-    this.load.image('playerPrefabShadow', '/assets/player-prefab/shadow.png');
     this.load.image('playerPrefabBody', '/assets/player-prefab/body.png');
     this.load.image('playerPrefabChest', '/assets/player-prefab/chest.png');
     this.load.image('playerPrefabHead', '/assets/player-prefab/head.png');
@@ -713,6 +715,8 @@ class MainScene extends Phaser.Scene {
       .rectangle(width - 16, 16, 126, 48, 0x000000, 1)
       .setOrigin(1, 0)
       .setScrollFactor(0);
+    this.secondClock = this.add.graphics().setScrollFactor(0);
+    this.drawSecondClock(0);
     this.timerText = this.add
       .text(width - 16, 16, '00:00', {
         fontFamily: 'Arial, Helvetica, sans-serif',
@@ -1087,12 +1091,8 @@ class MainScene extends Phaser.Scene {
     root.setPosition(0, PLAYER_PREFAB_ROOT_OFFSET_Y);
     root.setScale(PLAYER_PREFAB_PIXELS_PER_UNIT * PLAYER_PREFAB_CHARACTER_SCALE);
 
-    this.addPrefabSprite(root, 'playerPrefabShadow', 0.0010001063, 0.0009999871, 0.66, 0.26, {
-      alpha: 0.33333334
-    });
-
     const body = this.createPrefabNode(root, 0.006000102, 0.19145268, -1.9272974, 1, 1.0584189);
-    this.addPrefabSprite(body, 'playerPrefabBody', 0, 0, 0.41, 0.45, { tint: PLAYER_PREFAB_SKIN_TINT });
+    this.addPrefabSprite(body, 'playerPrefabBody', 0, 0, 0.41, 0.45, { tint: PLAYER_PREFAB_SKIN_TINT }); 
     this.addPrefabSprite(body, 'playerPrefabChest', 0, 0, 0.78, 0.7);
 
     const head = this.createPrefabNode(body, -0.039657928, 0.3265895, -0.0395905);
@@ -1115,14 +1115,14 @@ class MainScene extends Phaser.Scene {
     });
 
     const handLeft = this.createPrefabNode(root, -0.0077263433, 0.023179028);
-    this.addPrefabSprite(handLeft, 'playerPrefabShield', 0.29100013, 0.13100004, 0.52, 0.58);
+    // this.addPrefabSprite(handLeft, 'playerPrefabShield', 0.29100013, 0.13100004, 0.52, 0.58); // TODO 右手暂时隐藏
 
     const handRight = this.createPrefabNode(root, -0.0077263433, 0.023179028);
     const bow = this.createPrefabNode(handRight, -0.04399988, 0.08099997);
 
-    this.addPrefabSprite(bow, 'playerPrefabBowLineDown', -0.16500005, 0.100000024, 0.36, 0.06);
-    this.addPrefabSprite(bow, 'playerPrefabBowLineUp', 0.13999996, 0.100000024, 0.37, 0.06);
-    this.addPrefabSprite(bow, 'playerPrefabBow', 0, 0, 1.32, 0.73);
+    // this.addPrefabSprite(bow, 'playerPrefabBowLineDown', -0.16500005, 0.100000024, 0.36, 0.06);
+    // this.addPrefabSprite(bow, 'playerPrefabBowLineUp', 0.13999996, 0.100000024, 0.37, 0.06);
+    // this.addPrefabSprite(bow, 'playerPrefabBow', 0, 0, 1.32, 0.73); // TODO 弓箭暂时隐藏
     const arrow = this.createPrefabNode(bow, 0.005, -0.211, -90);
     const arrowSprite = this.addPrefabSprite(arrow, 'playerPrefabArrow', 0, 0, 0.88, 0.36, { alpha: 0 });
 
@@ -1352,6 +1352,48 @@ class MainScene extends Phaser.Scene {
     const seconds = (elapsedSeconds % 60).toString().padStart(2, '0');
 
     this.timerText.setText(`${minutes}:${seconds}`);
+    this.drawSecondClock(elapsedSeconds);
+  }
+
+  private drawSecondClock(elapsedSeconds: number) {
+    if (!this.secondClock) {
+      return;
+    }
+
+    const centerX = this.scale.width - SECOND_CLOCK_OFFSET_X;
+    const centerY = SECOND_CLOCK_OFFSET_Y;
+    const handAngle = Phaser.Math.DegToRad((elapsedSeconds % 60) * 6 - 90);
+    const handLength = SECOND_CLOCK_RADIUS - 5;
+    const handX = centerX + Math.cos(handAngle) * handLength;
+    const handY = centerY + Math.sin(handAngle) * handLength;
+
+    this.secondClock
+      .clear()
+      .fillStyle(0x000000, 1)
+      .fillCircle(centerX, centerY, SECOND_CLOCK_RADIUS + 5)
+      .lineStyle(3, 0xffffff, 1)
+      .strokeCircle(centerX, centerY, SECOND_CLOCK_RADIUS);
+
+    for (let tick = 0; tick < 60; tick += 5) {
+      const tickAngle = Phaser.Math.DegToRad(tick * 6 - 90);
+      const innerRadius = SECOND_CLOCK_RADIUS - 5;
+      const outerRadius = SECOND_CLOCK_RADIUS - 1;
+
+      this.secondClock
+        .lineStyle(2, 0x94a3b8, 1)
+        .lineBetween(
+          centerX + Math.cos(tickAngle) * innerRadius,
+          centerY + Math.sin(tickAngle) * innerRadius,
+          centerX + Math.cos(tickAngle) * outerRadius,
+          centerY + Math.sin(tickAngle) * outerRadius
+        );
+    }
+
+    this.secondClock
+      .lineStyle(3, 0xef4444, 1)
+      .lineBetween(centerX, centerY, handX, handY)
+      .fillStyle(0xef4444, 1)
+      .fillCircle(centerX, centerY, 3);
   }
 
   private updatePlayerPrefabAnimation(delta: number) {
@@ -1726,7 +1768,7 @@ class MainScene extends Phaser.Scene {
     }
     // console.log(`Attempting to lift player out of ladder from y=${this.player.y}`)
 
-    for (let lift = 1; lift <= PLAYER_LADDER_EXIT_LIFT; lift += 1) {
+    for (let lift = 1; lift <= SCENE_HEIGHT; lift += 1) {
       const testY = this.player.y - lift;
 
       if (!this.collidesWithMap(this.player.x, testY)) {
