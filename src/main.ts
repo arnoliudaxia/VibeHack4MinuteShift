@@ -8,6 +8,7 @@ const PLAYER_HEIGHT = 72;
 const PLAYER_SPEED = 260;
 const PLAYER_GRAVITY = 1100;
 const PLAYER_MAX_FALL_SPEED = 900;
+const PLAYER_STEP_HEIGHT = 24;
 const COLLISION_ALPHA_THRESHOLD = 16;
 const BGM_VOLUME = 0.45;
 const PANEL_CONTROL_X = 92;
@@ -332,6 +333,14 @@ class MainScene extends Phaser.Scene {
 
     if (!this.isWhiteCollisionEnabled || !this.collidesWithMap(nextX, this.player.y)) {
       this.player.x = nextX;
+    } else if (direction.x !== 0) {
+      const steppedY = this.tryStepUp(nextX, this.player.y);
+
+      if (steppedY !== undefined) {
+        this.player.x = nextX;
+        this.player.y = steppedY;
+        this.playerVelocityY = 0;
+      }
     }
 
     const nextY = Phaser.Math.Clamp(
@@ -459,6 +468,22 @@ class MainScene extends Phaser.Scene {
     }
 
     return false;
+  }
+
+  private tryStepUp(nextX: number, currentY: number) {
+    if (!this.isWhiteCollisionEnabled || this.playerState !== 'Normal') {
+      return undefined;
+    }
+
+    for (let step = 1; step <= PLAYER_STEP_HEIGHT; step += 1) {
+      const testY = currentY - step;
+
+      if (!this.collidesWithMap(this.player?.x ?? nextX, testY) && !this.collidesWithMap(nextX, testY)) {
+        return testY;
+      }
+    }
+
+    return undefined;
   }
 
   private isSolidPixel(x: number, y: number) {
