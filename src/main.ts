@@ -1097,10 +1097,11 @@ class MainScene extends Phaser.Scene {
 
     const head = this.createPrefabNode(body, -0.039657928, 0.3265895, -0.0395905);
     this.addPrefabSprite(head, 'playerPrefabHead', 0, 0, 0.65, 0.5, { tint: PLAYER_PREFAB_SKIN_TINT });
-    const normalEye = this.addPrefabSprite(head, 'playerPrefabEye', 0.13499999, -0.054999948, 0.78, 0.7);
-    this.addPrefabSprite(head, 'playerPrefabHair', 0.025000036, 0.024999976, 0.98, 1, {
-      tint: PLAYER_PREFAB_HAIR_TINT
-    });
+    const normalEye = this.addPrefabSprite(head, 'playerPrefabEye', 0.13499999, -0.054999948, 0.55, 0.32);
+    this.addPrefabSprite(head, 'playerPrefabHair', 0.025000036, 0.024999976, 0.98, 1);
+    // this.addPrefabSprite(head, 'playerPrefabHair', 0.025000036, 0.024999976, 0.98, 1, {
+    //   tint: PLAYER_PREFAB_HAIR_TINT
+    // });
 
     const animatedEye = this.createPrefabNode(head, 0.13399993, -0.058999896);
     const stunEyeLeft = this.createPrefabNode(animatedEye, -0.082, 0.010999978);
@@ -1688,6 +1689,7 @@ class MainScene extends Phaser.Scene {
     const isTouchingLadder = this.overlapsLadder(this.player.x, this.player.y);
     const isInsideDriveRoom = this.overlapsRoom(DRIVE_ROOM_CONFIG, this.player.x, this.player.y);
     const nextState: PlayerState =
+      this.playerState === 'Climbing' && isTouchingLadder ? 'Climbing' :
       isTouchingLadder && isVerticalInputPressed ? 'Climbing' :
       this.playerState === 'Driving-Repairing' && isInsideDriveRoom ? 'Driving-Repairing' :
       this.playerState === 'Driving' && isInsideDriveRoom && this.isDriveRoomWrong() && this.keys?.E.isDown ? 'Driving-Repairing' :
