@@ -10,6 +10,11 @@ const PLAYER_GRAVITY = 1100;
 const PLAYER_MAX_FALL_SPEED = 900;
 const PLAYER_STEP_HEIGHT = 24;
 const PLAYER_LADDER_EXIT_LIFT = SCENE_HEIGHT;
+const PLAYER_PREFAB_CHARACTER_SCALE = 2.0872;
+const PLAYER_PREFAB_PIXELS_PER_UNIT = 30;
+const PLAYER_PREFAB_ROOT_OFFSET_Y = PLAYER_HEIGHT / 2 - 8;
+const PLAYER_PREFAB_SKIN_TINT = 0xfac9ac;
+const PLAYER_PREFAB_HAIR_TINT = 0x7de8a7;
 const COLLISION_ALPHA_THRESHOLD = 16;
 const BGM_VOLUME = 0.45;
 const PANEL_CONTROL_X = 92;
@@ -28,9 +33,533 @@ type VolumeSound = Phaser.Sound.BaseSound & {
 };
 
 type PlayerState = 'Normal' | 'Climbing';
+type PlayerPrefabAnimationName = 'Idle' | 'Walk' | 'Run' | 'Attack' | 'Jump' | 'Dance' | 'Stun' | 'Defeat';
+type PrefabAnimationNodeKey = 'body' | 'head' | 'handLeft' | 'handRight' | 'bow' | 'stunEyeLeft' | 'stunEyeRight';
+type PrefabAnimationAlphaKey = 'normalEye' | 'arrow' | 'stunEyeLeft' | 'stunEyeRight' | 'defeatEyeLeft' | 'defeatEyeRight';
+
+type PrefabSpriteOptions = {
+  alpha?: number;
+  tint?: number;
+};
+
+type NumberKeyframe = {
+  time: number;
+  value: number;
+};
+
+type VectorKeyframe = {
+  time: number;
+  x: number;
+  y: number;
+};
+
+type PrefabAnimationNode = Phaser.GameObjects.Container & {
+  baseX: number;
+  baseY: number;
+  baseRotation: number;
+  baseScaleX: number;
+  baseScaleY: number;
+};
+
+type PrefabAnimationSprite = Phaser.GameObjects.Image & {
+  baseAlpha: number;
+};
+
+type PrefabAnimationNodes = {
+  [key in PrefabAnimationNodeKey]: PrefabAnimationNode;
+};
+
+type PrefabAnimationSprites = {
+  [key in PrefabAnimationAlphaKey]: PrefabAnimationSprite;
+};
+
+type PrefabAnimationClip = {
+  duration: number;
+  loop: boolean;
+  positions?: Partial<Record<PrefabAnimationNodeKey, VectorKeyframe[]>>;
+  rotations?: Partial<Record<PrefabAnimationNodeKey, NumberKeyframe[]>>;
+  scaleY?: Partial<Record<PrefabAnimationNodeKey, NumberKeyframe[]>>;
+  alphas?: Partial<Record<PrefabAnimationAlphaKey, NumberKeyframe[]>>;
+};
+
+type PlayerAnimationWindow = Window & {
+  playPlayerAnimation?: (animationName: PlayerPrefabAnimationName) => boolean;
+  getPlayerAnimationState?: () => PlayerPrefabAnimationName;
+};
+
+const PLAYER_PREFAB_ANIMATION_NAMES: PlayerPrefabAnimationName[] = [
+  'Idle',
+  'Walk',
+  'Run',
+  'Attack',
+  'Jump',
+  'Dance',
+  'Stun',
+  'Defeat'
+];
+
+const PLAYER_PREFAB_ANIMATIONS: Record<PlayerPrefabAnimationName, PrefabAnimationClip> = {
+  Idle: {
+    duration: 1.8333334,
+    loop: true,
+    positions: {
+      body: [
+        { time: 0, x: 0.006000102, y: 0.1759999 },
+        { time: 0.9166667, x: 0.006000102, y: 0.192 },
+        { time: 1.8333334, x: 0.006000102, y: 0.1759999 }
+      ],
+      head: [
+        { time: 0, x: -0.03000003, y: 0.315 },
+        { time: 0.9166667, x: -0.04, y: 0.327 },
+        { time: 1.8333334, x: -0.03000003, y: 0.315 }
+      ],
+      handRight: [
+        { time: 0, x: 0, y: 0 },
+        { time: 0.9166667, x: -0.008, y: 0.024 },
+        { time: 1.8333334, x: 0, y: 0 }
+      ],
+      handLeft: [
+        { time: 0, x: 0, y: 0 },
+        { time: 0.9166667, x: -0.008, y: 0.024 },
+        { time: 1.8333334, x: 0, y: 0 }
+      ]
+    },
+    rotations: {
+      body: [
+        { time: 0, value: 0 },
+        { time: 0.9166667, value: -1.995 },
+        { time: 1.8333334, value: 0 }
+      ],
+      head: [
+        { time: 0, value: 0 },
+        { time: 0.9166667, value: -0.041 },
+        { time: 1.8333334, value: 0 }
+      ]
+    },
+    scaleY: {
+      body: [
+        { time: 0, value: 1 },
+        { time: 0.9166667, value: 1.060488 },
+        { time: 1.8333334, value: 1 }
+      ]
+    }
+  },
+  Walk: {
+    duration: 0.6666667,
+    loop: true,
+    positions: {
+      body: [
+        { time: 0, x: 0.006000102, y: 0.164 },
+        { time: 0.31666666, x: 0.006000102, y: 0.17 },
+        { time: 0.56666666, x: 0.006000102, y: 0.149 },
+        { time: 0.6666667, x: 0.006000102, y: 0.164 }
+      ],
+      handRight: [
+        { time: 0, x: 0, y: 0 },
+        { time: 0.31666666, x: -0.038, y: 0.017 },
+        { time: 0.56666666, x: 0, y: -0.011 },
+        { time: 0.6666667, x: 0, y: 0 }
+      ],
+      handLeft: [
+        { time: 0, x: 0, y: 0 },
+        { time: 0.31666666, x: -0.027, y: -0.007 },
+        { time: 0.6666667, x: 0, y: 0 }
+      ]
+    },
+    rotations: {
+      body: [
+        { time: 0, value: 0 },
+        { time: 0.15, value: -2.701 },
+        { time: 0.31666666, value: 0 },
+        { time: 0.5, value: 4.199 },
+        { time: 0.6666667, value: 0 }
+      ],
+      head: [
+        { time: 0, value: 0 },
+        { time: 0.15, value: 5.634 },
+        { time: 0.31666666, value: 2.627 },
+        { time: 0.5, value: -1.188 },
+        { time: 0.6666667, value: 0 }
+      ]
+    },
+    scaleY: {
+      body: [
+        { time: 0, value: 0.96 },
+        { time: 0.31666666, value: 1 },
+        { time: 0.53333336, value: 0.97823733 },
+        { time: 0.6666667, value: 0.96 }
+      ]
+    }
+  },
+  Run: {
+    duration: 0.33333334,
+    loop: true,
+    positions: {
+      body: [
+        { time: 0, x: 0.006000102, y: 0.164 },
+        { time: 0.16666667, x: 0.006000102, y: 0.207 },
+        { time: 0.28333333, x: 0.006000102, y: 0.149 },
+        { time: 0.33333334, x: 0.006000102, y: 0.164 }
+      ],
+      handRight: [
+        { time: 0, x: -0.09, y: 0.02 },
+        { time: 0.16666667, x: -0.041, y: 0.075 },
+        { time: 0.33333334, x: -0.09, y: 0.02 }
+      ],
+      handLeft: [
+        { time: 0, x: -0.011, y: -0.022 },
+        { time: 0.16666667, x: -0.01, y: 0.055 },
+        { time: 0.33333334, x: -0.011, y: -0.022 }
+      ]
+    },
+    rotations: {
+      body: [
+        { time: 0, value: 0 },
+        { time: 0.06666667, value: -2.701 },
+        { time: 0.16666667, value: 0 },
+        { time: 0.25, value: 4.199 },
+        { time: 0.33333334, value: 0 }
+      ],
+      head: [
+        { time: 0, value: 0 },
+        { time: 0.06666667, value: 5.634 },
+        { time: 0.16666667, value: 2.627 },
+        { time: 0.25, value: -1.188 },
+        { time: 0.33333334, value: 0 }
+      ],
+      bow: [
+        { time: 0, value: -19.281 },
+        { time: 0.16666667, value: -9.409 },
+        { time: 0.33333334, value: -19.281 }
+      ]
+    },
+    scaleY: {
+      body: [
+        { time: 0, value: 0.96 },
+        { time: 0.16666667, value: 1 },
+        { time: 0.26666668, value: 0.97823733 },
+        { time: 0.33333334, value: 0.96 }
+      ]
+    }
+  },
+  Attack: {
+    duration: 1.8333334,
+    loop: true,
+    positions: {
+      body: [
+        { time: 0, x: 0.006000102, y: 0.1759999 },
+        { time: 0.5, x: -0.007, y: 0.17599994 },
+        { time: 0.9166667, x: 0.008, y: 0.179 },
+        { time: 1.0833334, x: 0.074, y: 0.176 },
+        { time: 1.5, x: 0.08, y: 0.17 },
+        { time: 1.8333334, x: 0.006000102, y: 0.1759999 }
+      ],
+      head: [
+        { time: 0, x: -0.03000003, y: 0.315 },
+        { time: 0.5, x: -0.023, y: 0.325 },
+        { time: 0.9166667, x: -0.01, y: 0.32 },
+        { time: 1.0833334, x: -0.008, y: 0.322 },
+        { time: 1.5, x: -0.005, y: 0.32 },
+        { time: 1.8333334, x: -0.03000003, y: 0.315 }
+      ],
+      bow: [
+        { time: 0, x: -0.04399988, y: 0.08099997 },
+        { time: 0.5, x: 0.31, y: 0.41 },
+        { time: 0.75, x: 0.177, y: 0.412 },
+        { time: 0.9166667, x: 0.177, y: 0.412 },
+        { time: 1, x: 0.38, y: 0.44 },
+        { time: 1.1666666, x: 0.51, y: 0.41 },
+        { time: 1.5, x: 0.34, y: 0.03 },
+        { time: 1.8333334, x: -0.04399988, y: 0.08099997 }
+      ],
+      handLeft: [
+        { time: 0, x: 0, y: 0 },
+        { time: 0.5, x: 0.036, y: 0.006 },
+        { time: 0.9166667, x: 0.042, y: 0.012 },
+        { time: 1, x: -0.005, y: 0.015 },
+        { time: 1.1666666, x: 0.042, y: 0.023 },
+        { time: 1.5, x: 0.07, y: 0.011 },
+        { time: 1.8333334, x: 0, y: 0 }
+      ]
+    },
+    rotations: {
+      body: [
+        { time: 0, value: 0 },
+        { time: 0.5, value: 3.858 },
+        { time: 0.9166667, value: 4.691 },
+        { time: 1.0833334, value: -5.592 },
+        { time: 1.5, value: -6.895 },
+        { time: 1.8333334, value: 0 }
+      ],
+      head: [
+        { time: 0, value: 0 },
+        { time: 0.5, value: 4.128 },
+        { time: 0.9166667, value: 2.896 },
+        { time: 1.0833334, value: 2.489 },
+        { time: 1.5, value: 4.791 },
+        { time: 1.8333334, value: 0 }
+      ],
+      bow: [
+        { time: 0, value: 0 },
+        { time: 0.5, value: 100.285 },
+        { time: 0.75, value: 107.885 },
+        { time: 0.9166667, value: 107.885 },
+        { time: 1, value: 98.377 },
+        { time: 1.1666666, value: 89.084 },
+        { time: 1.5, value: 9.523 },
+        { time: 1.8333334, value: 0 }
+      ]
+    },
+    alphas: {
+      arrow: [
+        { time: 0.3, value: 0 },
+        { time: 0.36666667, value: 1 },
+        { time: 0.9166667, value: 1 },
+        { time: 0.96666664, value: 0 }
+      ]
+    }
+  },
+  Jump: {
+    duration: 0.9166667,
+    loop: true,
+    positions: {
+      body: [
+        { time: 0, x: 0.006000102, y: 0.1759999 },
+        { time: 0.083333336, x: 0.006000102, y: 0.152 },
+        { time: 0.33333334, x: 0.006000102, y: 0.472 },
+        { time: 0.65, x: 0.006000102, y: 0.446 },
+        { time: 0.81666666, x: 0.006000102, y: 0.152 },
+        { time: 0.9166667, x: 0.006000102, y: 0.1759999 }
+      ],
+      head: [
+        { time: 0, x: -0.03000003, y: 0.315 },
+        { time: 0.083333336, x: -0.006, y: 0.252 },
+        { time: 0.16666667, x: -0.006, y: 0.323 },
+        { time: 0.73333335, x: -0.001, y: 0.294 },
+        { time: 0.8666667, x: 0.018, y: 0.296 },
+        { time: 0.9166667, x: -0.03000003, y: 0.315 }
+      ],
+      handRight: [
+        { time: 0, x: 0, y: 0 },
+        { time: 0.06666667, x: 0.015, y: -0.015 },
+        { time: 0.15, x: 0.122, y: 0.277 },
+        { time: 0.31666666, x: 0.044, y: 0.352 },
+        { time: 0.6166667, x: 0.005, y: 0.333 },
+        { time: 0.71666664, x: 0.002, y: 0.163 },
+        { time: 0.8333333, x: 0, y: 0 }
+      ],
+      handLeft: [
+        { time: 0, x: 0, y: 0 },
+        { time: 0.06666667, x: -0.06, y: -0.029 },
+        { time: 0.15, x: -0.017, y: 0.072 },
+        { time: 0.31666666, x: -0.057, y: 0.322 },
+        { time: 0.6166667, x: -0.035, y: 0.233 },
+        { time: 0.75, x: 0.011, y: 0.051 },
+        { time: 0.8333333, x: 0, y: 0 }
+      ]
+    },
+    rotations: {
+      head: [
+        { time: 0, value: 0 },
+        { time: 0.16666667, value: 8.705 },
+        { time: 0.73333335, value: -1.063 },
+        { time: 0.9166667, value: 0 }
+      ],
+      handRight: [
+        { time: 0, value: 0 },
+        { time: 0.06666667, value: -8.132 },
+        { time: 0.15, value: 31.375 },
+        { time: 0.31666666, value: 15.915 },
+        { time: 0.6166667, value: -1.707 },
+        { time: 0.71666664, value: -11.474 },
+        { time: 0.8333333, value: 0 }
+      ],
+      handLeft: [
+        { time: 0, value: 0 },
+        { time: 0.06666667, value: 0.106 },
+        { time: 0.15, value: -2.2 },
+        { time: 0.31666666, value: -16.7 },
+        { time: 0.6166667, value: -3.592 },
+        { time: 0.75, value: 4.449 },
+        { time: 0.8333333, value: 0 }
+      ]
+    },
+    scaleY: {
+      body: [
+        { time: 0, value: 1 },
+        { time: 0.083333336, value: 0.93 },
+        { time: 0.33333334, value: 1.03 },
+        { time: 0.65, value: 1 },
+        { time: 0.81666666, value: 0.93 },
+        { time: 0.9166667, value: 1 }
+      ]
+    }
+  },
+  Dance: {
+    duration: 0.6666667,
+    loop: true,
+    positions: {
+      body: [
+        { time: 0, x: 0.006000102, y: 0.1759999 },
+        { time: 0.16666667, x: 0.006000102, y: 0.154 },
+        { time: 0.33333334, x: 0.006000102, y: 0.1759999 },
+        { time: 0.5, x: 0.006000102, y: 0.154 },
+        { time: 0.6666667, x: 0.006000102, y: 0.1759999 }
+      ],
+      head: [
+        { time: 0, x: -0.03000003, y: 0.315 },
+        { time: 0.16666667, x: 0.01, y: 0.277 },
+        { time: 0.33333334, x: -0.03000003, y: 0.315 },
+        { time: 0.5, x: -0.07, y: 0.286 },
+        { time: 0.6666667, x: -0.03000003, y: 0.315 }
+      ],
+      handLeft: [
+        { time: 0, x: 0, y: 0 },
+        { time: 0.16666667, x: 0.027, y: -0.001 },
+        { time: 0.33333334, x: 0, y: 0 },
+        { time: 0.5, x: 0.004, y: -0.02 },
+        { time: 0.6666667, x: 0, y: 0 }
+      ]
+    },
+    rotations: {
+      body: [
+        { time: 0, value: 8.182 },
+        { time: 0.33333334, value: -9.011 },
+        { time: 0.6666667, value: 8.182 }
+      ],
+      handRight: [
+        { time: 0, value: -1.3430009 },
+        { time: 0.16666667, value: -8.448 },
+        { time: 0.5, value: 5.762 },
+        { time: 0.6666667, value: -1.3430009 }
+      ]
+    },
+    scaleY: {
+      body: [
+        { time: 0, value: 1 },
+        { time: 0.16666667, value: 0.91 },
+        { time: 0.33333334, value: 1 },
+        { time: 0.5, value: 0.91 },
+        { time: 0.6666667, value: 1 }
+      ]
+    }
+  },
+  Stun: {
+    duration: 2,
+    loop: true,
+    positions: {
+      body: [
+        { time: 0, x: -0.009, y: 0.1759999 },
+        { time: 1, x: 0.04, y: 0.1759999 },
+        { time: 2, x: -0.009, y: 0.1759999 }
+      ],
+      head: [
+        { time: 0, x: -0.050295997, y: 0.308112 },
+        { time: 0.4, x: -0.095, y: 0.306 },
+        { time: 1.4, x: 0.032, y: 0.312 },
+        { time: 2, x: -0.050295997, y: 0.308112 }
+      ],
+      handRight: [
+        { time: 0, x: 0.02, y: 0.02 },
+        { time: 1, x: -0.044, y: -0.014 },
+        { time: 2, x: 0.02, y: 0.02 }
+      ],
+      handLeft: [
+        { time: 0, x: -0.028, y: 0.01 },
+        { time: 1, x: 0.014, y: 0.005 },
+        { time: 2, x: -0.028, y: 0.01 }
+      ]
+    },
+    rotations: {
+      body: [
+        { time: 0, value: 5.591 },
+        { time: 1, value: -7.127 },
+        { time: 2, value: 5.591 }
+      ],
+      head: [
+        { time: 0, value: 10.945526 },
+        { time: 0.4, value: 22.099 },
+        { time: 1.4, value: -9.587 },
+        { time: 2, value: 10.945526 }
+      ],
+      handLeft: [{ time: 0, value: -4.525 }],
+      stunEyeLeft: [
+        { time: 0, value: 0 },
+        { time: 2, value: -360 }
+      ],
+      stunEyeRight: [
+        { time: 0, value: 0 },
+        { time: 2, value: -360 }
+      ]
+    },
+    alphas: {
+      normalEye: [{ time: 0, value: 0 }],
+      stunEyeLeft: [{ time: 0, value: 1 }],
+      stunEyeRight: [{ time: 0, value: 1 }]
+    }
+  },
+  Defeat: {
+    duration: 3,
+    loop: true,
+    positions: {
+      body: [
+        { time: 0, x: -0.016, y: 0.1759999 },
+        { time: 1.5, x: 0.028, y: 0.17 },
+        { time: 3, x: -0.016, y: 0.1759999 }
+      ],
+      head: [
+        { time: 0, x: 0.071, y: 0.213 },
+        { time: 1.5, x: 0.034, y: 0.212 },
+        { time: 3, x: 0.071, y: 0.213 }
+      ],
+      handRight: [
+        { time: 0, x: 0, y: -0.056 },
+        { time: 1.5, x: 0.014, y: -0.059 },
+        { time: 3, x: 0, y: -0.056 }
+      ],
+      handLeft: [
+        { time: 0, x: -0.05, y: -0.014 },
+        { time: 1.5, x: -0.008, y: -0.08 },
+        { time: 3, x: -0.05, y: -0.014 }
+      ]
+    },
+    rotations: {
+      body: [
+        { time: 0, value: 16.021 },
+        { time: 1.5, value: -4.583 },
+        { time: 3, value: 16.021 }
+      ],
+      head: [
+        { time: 0, value: -20.658 },
+        { time: 1.5, value: -8.335 },
+        { time: 3, value: -20.658 }
+      ],
+      handRight: [
+        { time: 0, value: -9.96 },
+        { time: 1.5, value: -6.79 },
+        { time: 3, value: -9.96 }
+      ],
+      handLeft: [
+        { time: 0, value: -20.233 },
+        { time: 1.5, value: -8.575 },
+        { time: 3, value: -20.233 }
+      ]
+    },
+    alphas: {
+      normalEye: [{ time: 0, value: 0 }],
+      defeatEyeLeft: [{ time: 0, value: 1 }],
+      defeatEyeRight: [{ time: 0, value: 1 }]
+    }
+  }
+};
 
 class MainScene extends Phaser.Scene {
   private player?: Phaser.GameObjects.Graphics;
+  private playerPrefabVisual?: Phaser.GameObjects.Container;
+  private playerPrefabAnimationNodes?: PrefabAnimationNodes;
+  private playerPrefabAnimationSprites?: PrefabAnimationSprites;
+  private playerPrefabAnimationState: PlayerPrefabAnimationName = 'Idle';
+  private playerPrefabAnimationTime = 0;
   private keys?: PlayerKeys;
   private bgm?: VolumeSound;
   private isBgmMuted = true;
@@ -56,6 +585,19 @@ class MainScene extends Phaser.Scene {
     this.load.image('collision', '/assets/scene/physic.png');
     this.load.image('drive', '/assets/scene/ShipRoom/drive.png');
     this.load.image('driveFire', '/assets/scene/ShipRoom/driveFire.png');
+    this.load.image('playerPrefabShadow', '/assets/player-prefab/shadow.png');
+    this.load.image('playerPrefabBody', '/assets/player-prefab/body.png');
+    this.load.image('playerPrefabChest', '/assets/player-prefab/chest.png');
+    this.load.image('playerPrefabHead', '/assets/player-prefab/head.png');
+    this.load.image('playerPrefabHair', '/assets/player-prefab/hair.png');
+    this.load.image('playerPrefabEye', '/assets/player-prefab/eye.png');
+    this.load.image('playerPrefabShield', '/assets/player-prefab/shield.png');
+    this.load.image('playerPrefabBowLineDown', '/assets/player-prefab/bow-line-down.png');
+    this.load.image('playerPrefabBow', '/assets/player-prefab/bow.png');
+    this.load.image('playerPrefabBowLineUp', '/assets/player-prefab/bow-line-up.png');
+    this.load.image('playerPrefabArrow', '/assets/player-prefab/arrow.png');
+    this.load.image('playerPrefabEyeStun', '/assets/player-prefab/eye-stun.png');
+    this.load.image('playerPrefabEyeDefeat', '/assets/player-prefab/eye-defeat.png');
     this.load.audio('bgm', '/assets/Sound/BGM/HOYO-MiX - 危机预知 Crises.mp3');
     this.load.image('astronautWalkRight1', '/assets/generated_sprites/astronaut_walk_right/walk-1.png');
     this.load.image('astronautWalkRight2', '/assets/generated_sprites/astronaut_walk_right/walk-2.png');
@@ -92,13 +634,16 @@ class MainScene extends Phaser.Scene {
       .fillStyle(0x38bdf8, 1)
       .fillRoundedRect(-PLAYER_WIDTH / 2, -PLAYER_HEIGHT / 2, PLAYER_WIDTH, PLAYER_HEIGHT, PLAYER_WIDTH / 2)
       .lineStyle(3, 0xe0f2fe, 1)
-      .strokeRoundedRect(-PLAYER_WIDTH / 2, -PLAYER_HEIGHT / 2, PLAYER_WIDTH, PLAYER_HEIGHT, PLAYER_WIDTH / 2);
+      .strokeRoundedRect(-PLAYER_WIDTH / 2, -PLAYER_HEIGHT / 2, PLAYER_WIDTH, PLAYER_HEIGHT, PLAYER_WIDTH / 2)
+      .setVisible(false);
+    this.playerPrefabVisual = this.createPlayerPrefabVisual(this.player.x, this.player.y);
+    this.exposePlayerAnimationInterface();
 
     this.keys = this.input.keyboard?.addKeys('W,A,S,D') as PlayerKeys | undefined;
 
     const panel = this.add.container(16, 16).setScrollFactor(0);
     const panelBackground = this.add
-      .rectangle(0, 0, 220, 240, 0x0f172a, 0.82)
+      .rectangle(0, 0, 220, 284, 0x0f172a, 0.82)
       .setOrigin(0);
     const soundLabel = this.add.text(14, 21, 'BGM', {
       fontFamily: 'Arial, Helvetica, sans-serif',
@@ -159,28 +704,43 @@ class MainScene extends Phaser.Scene {
       color: '#ffffff'
     });
 
-    const label = this.add.text(14, 197, 'Drive', {
+    const animationLabel = this.add.text(14, 197, 'Animation', {
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: '16px',
+      color: '#ffffff'
+    });
+    const animationButton = this.add
+      .rectangle(PANEL_CONTROL_X, 192, PANEL_CONTROL_WIDTH, 32, 0x7c3aed, 1)
+      .setOrigin(0)
+      .setInteractive({ useHandCursor: true });
+    const animationText = this.add.text(132, 199, this.playerPrefabAnimationState, {
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: '15px',
+      color: '#ffffff'
+    });
+
+    const label = this.add.text(14, 241, 'Drive', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '16px',
       color: '#ffffff'
     });
 
     const selectedBackground = this.add
-      .rectangle(PANEL_CONTROL_X, 192, PANEL_CONTROL_WIDTH, 32, 0x334155, 1)
+      .rectangle(PANEL_CONTROL_X, 236, PANEL_CONTROL_WIDTH, 32, 0x334155, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
-    const selectedText = this.add.text(104, 199, 'None', {
+    const selectedText = this.add.text(104, 243, 'None', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#ffffff'
     });
-    const arrow = this.add.text(184, 199, 'v', {
+    const arrow = this.add.text(184, 243, 'v', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#cbd5e1'
     });
 
-    const menu = this.add.container(PANEL_CONTROL_X, 226).setVisible(false);
+    const menu = this.add.container(PANEL_CONTROL_X, 270).setVisible(false);
     const options = [
       { label: 'None', texture: null },
       { label: 'Normal', texture: 'drive' },
@@ -227,6 +787,9 @@ class MainScene extends Phaser.Scene {
       gravityText,
       stateLabel,
       this.stateText,
+      animationLabel,
+      animationButton,
+      animationText,
       label,
       selectedBackground,
       selectedText,
@@ -236,6 +799,15 @@ class MainScene extends Phaser.Scene {
 
     selectedBackground.on('pointerdown', () => {
       menu.setVisible(!menu.visible);
+    });
+
+    animationButton.on('pointerdown', () => {
+      const currentIndex = PLAYER_PREFAB_ANIMATION_NAMES.indexOf(this.playerPrefabAnimationState);
+      const nextAnimation = PLAYER_PREFAB_ANIMATION_NAMES[(currentIndex + 1) % PLAYER_PREFAB_ANIMATION_NAMES.length];
+
+      this.playPlayerPrefabAnimation(nextAnimation);
+      animationText.setText(nextAnimation);
+      animationText.setX(nextAnimation.length > 5 ? 116 : 132);
     });
 
     muteButton.on('pointerdown', () => {
@@ -288,6 +860,7 @@ class MainScene extends Phaser.Scene {
       return;
     }
 
+    this.updatePlayerPrefabAnimation(delta);
     this.updatePlayerState(this.keys.W.isDown || this.keys.S.isDown);
 
     const direction = new Phaser.Math.Vector2(0, 0);
@@ -298,6 +871,10 @@ class MainScene extends Phaser.Scene {
 
     if (this.keys.D.isDown) {
       direction.x += 1;
+    }
+
+    if (direction.x !== 0) {
+      this.setPlayerPrefabFacing(direction.x < 0 ? -1 : 1);
     }
 
     if (this.keys.W.isDown) {
@@ -323,6 +900,7 @@ class MainScene extends Phaser.Scene {
     }
 
     if (direction.x === 0 && direction.y === 0) {
+      this.syncPlayerPrefabVisual();
       return;
     }
 
@@ -357,6 +935,265 @@ class MainScene extends Phaser.Scene {
     }
 
     this.updatePlayerState(this.keys.W.isDown || this.keys.S.isDown);
+    this.syncPlayerPrefabVisual();
+  }
+
+  private createPlayerPrefabVisual(x: number, y: number) {
+    const visual = this.add.container(x, y);
+    const root = this.createPrefabNode(visual, 0, 0);
+
+    root.setPosition(0, PLAYER_PREFAB_ROOT_OFFSET_Y);
+    root.setScale(PLAYER_PREFAB_PIXELS_PER_UNIT * PLAYER_PREFAB_CHARACTER_SCALE);
+
+    this.addPrefabSprite(root, 'playerPrefabShadow', 0.0010001063, 0.0009999871, 0.66, 0.26, {
+      alpha: 0.33333334
+    });
+
+    const body = this.createPrefabNode(root, 0.006000102, 0.19145268, -1.9272974, 1, 1.0584189);
+    this.addPrefabSprite(body, 'playerPrefabBody', 0, 0, 0.41, 0.45, { tint: PLAYER_PREFAB_SKIN_TINT });
+    this.addPrefabSprite(body, 'playerPrefabChest', 0, 0, 0.78, 0.7);
+
+    const head = this.createPrefabNode(body, -0.039657928, 0.3265895, -0.0395905);
+    this.addPrefabSprite(head, 'playerPrefabHead', 0, 0, 0.65, 0.5, { tint: PLAYER_PREFAB_SKIN_TINT });
+    const normalEye = this.addPrefabSprite(head, 'playerPrefabEye', 0.13499999, -0.054999948, 0.78, 0.7);
+    this.addPrefabSprite(head, 'playerPrefabHair', 0.025000036, 0.024999976, 0.98, 1, {
+      tint: PLAYER_PREFAB_HAIR_TINT
+    });
+
+    const animatedEye = this.createPrefabNode(head, 0.13399993, -0.058999896);
+    const stunEyeLeft = this.createPrefabNode(animatedEye, -0.082, 0.010999978);
+    const stunEyeRight = this.createPrefabNode(animatedEye, 0.09200001, 0);
+    const stunEyeLeftSprite = this.addPrefabSprite(stunEyeLeft, 'playerPrefabEyeStun', 0, 0, 0.24, 0.22, { alpha: 0 });
+    const stunEyeRightSprite = this.addPrefabSprite(stunEyeRight, 'playerPrefabEyeStun', 0, 0, 0.24, 0.22, { alpha: 0 });
+    const defeatEyeLeft = this.addPrefabSprite(animatedEye, 'playerPrefabEyeDefeat', -0.065, 0.012, 0.19, 0.15, {
+      alpha: 0
+    });
+    const defeatEyeRight = this.addPrefabSprite(animatedEye, 'playerPrefabEyeDefeat', 0.079, 0.006, 0.19, 0.15, {
+      alpha: 0
+    });
+
+    const handLeft = this.createPrefabNode(root, -0.0077263433, 0.023179028);
+    this.addPrefabSprite(handLeft, 'playerPrefabShield', 0.29100013, 0.13100004, 0.52, 0.58);
+
+    const handRight = this.createPrefabNode(root, -0.0077263433, 0.023179028);
+    const bow = this.createPrefabNode(handRight, -0.04399988, 0.08099997);
+
+    this.addPrefabSprite(bow, 'playerPrefabBowLineDown', -0.16500005, 0.100000024, 0.36, 0.06);
+    this.addPrefabSprite(bow, 'playerPrefabBowLineUp', 0.13999996, 0.100000024, 0.37, 0.06);
+    this.addPrefabSprite(bow, 'playerPrefabBow', 0, 0, 1.32, 0.73);
+    const arrow = this.createPrefabNode(bow, 0.005, -0.211, -90);
+    const arrowSprite = this.addPrefabSprite(arrow, 'playerPrefabArrow', 0, 0, 0.88, 0.36, { alpha: 0 });
+
+    this.playerPrefabAnimationNodes = { body, head, handLeft, handRight, bow, stunEyeLeft, stunEyeRight };
+    this.playerPrefabAnimationSprites = {
+      normalEye,
+      arrow: arrowSprite,
+      stunEyeLeft: stunEyeLeftSprite,
+      stunEyeRight: stunEyeRightSprite,
+      defeatEyeLeft,
+      defeatEyeRight
+    };
+    this.playPlayerPrefabAnimation('Idle');
+
+    return visual;
+  }
+
+  private createPrefabNode(
+    parent: Phaser.GameObjects.Container,
+    x: number,
+    y: number,
+    unityRotationDegrees = 0,
+    scaleX = 1,
+    scaleY = 1
+  ) {
+    const node = this.add.container(x, -y) as PrefabAnimationNode;
+    const rotation = Phaser.Math.DegToRad(-unityRotationDegrees);
+
+    node.baseX = x;
+    node.baseY = -y;
+    node.baseRotation = rotation;
+    node.baseScaleX = scaleX;
+    node.baseScaleY = scaleY;
+    node.setRotation(rotation);
+    node.setScale(scaleX, scaleY);
+    parent.add(node);
+
+    return node;
+  }
+
+  private addPrefabSprite(
+    parent: Phaser.GameObjects.Container,
+    texture: string,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    options: PrefabSpriteOptions = {}
+  ) {
+    const sprite = this.add.image(x, -y, texture).setDisplaySize(width, height) as PrefabAnimationSprite;
+
+    sprite.baseAlpha = options.alpha ?? 1;
+
+    if (options.alpha !== undefined) {
+      sprite.setAlpha(options.alpha);
+    }
+
+    if (options.tint !== undefined) {
+      sprite.setTint(options.tint);
+    }
+
+    parent.add(sprite);
+
+    return sprite;
+  }
+
+  private syncPlayerPrefabVisual() {
+    if (!this.player || !this.playerPrefabVisual) {
+      return;
+    }
+
+    this.playerPrefabVisual.setPosition(this.player.x, this.player.y);
+  }
+
+  private setPlayerPrefabFacing(facingX: -1 | 1) {
+    if (!this.playerPrefabVisual || this.playerPrefabVisual.scaleX === facingX) {
+      return;
+    }
+
+    this.playerPrefabVisual.setScale(facingX, 1);
+  }
+
+  public playPlayerPrefabAnimation(animationName: PlayerPrefabAnimationName, restart = true) {
+    if (!PLAYER_PREFAB_ANIMATIONS[animationName]) {
+      return false;
+    }
+
+    if (this.playerPrefabAnimationState !== animationName || restart) {
+      this.playerPrefabAnimationState = animationName;
+      this.playerPrefabAnimationTime = 0;
+    }
+
+    this.updatePlayerPrefabAnimation(0);
+
+    return true;
+  }
+
+  public getPlayerPrefabAnimationState() {
+    return this.playerPrefabAnimationState;
+  }
+
+  private exposePlayerAnimationInterface() {
+    const animationWindow = window as PlayerAnimationWindow;
+
+    animationWindow.playPlayerAnimation = (animationName) => this.playPlayerPrefabAnimation(animationName);
+    animationWindow.getPlayerAnimationState = () => this.getPlayerPrefabAnimationState();
+  }
+
+  private updatePlayerPrefabAnimation(delta: number) {
+    const clip = PLAYER_PREFAB_ANIMATIONS[this.playerPrefabAnimationState];
+
+    if (!this.playerPrefabAnimationNodes || !this.playerPrefabAnimationSprites) {
+      return;
+    }
+
+    this.playerPrefabAnimationTime += delta / 1000;
+
+    if (clip.loop) {
+      this.playerPrefabAnimationTime %= clip.duration;
+    } else {
+      this.playerPrefabAnimationTime = Math.min(this.playerPrefabAnimationTime, clip.duration);
+    }
+
+    this.applyPlayerPrefabAnimationFrame(clip, this.playerPrefabAnimationTime);
+  }
+
+  private applyPlayerPrefabAnimationFrame(clip: PrefabAnimationClip, time: number) {
+    if (!this.playerPrefabAnimationNodes || !this.playerPrefabAnimationSprites) {
+      return;
+    }
+
+    this.resetPlayerPrefabAnimationPose();
+
+    for (const [nodeKey, curve] of Object.entries(clip.positions ?? {}) as [PrefabAnimationNodeKey, VectorKeyframe[]][]) {
+      const position = this.sampleVectorCurve(curve, time);
+
+      this.applyPrefabNodePosition(this.playerPrefabAnimationNodes[nodeKey], position.x, position.y);
+    }
+
+    for (const [nodeKey, curve] of Object.entries(clip.rotations ?? {}) as [PrefabAnimationNodeKey, NumberKeyframe[]][]) {
+      this.playerPrefabAnimationNodes[nodeKey].setRotation(Phaser.Math.DegToRad(-this.sampleNumberCurve(curve, time)));
+    }
+
+    for (const [nodeKey, curve] of Object.entries(clip.scaleY ?? {}) as [PrefabAnimationNodeKey, NumberKeyframe[]][]) {
+      const node = this.playerPrefabAnimationNodes[nodeKey];
+
+      node.setScale(node.baseScaleX, this.sampleNumberCurve(curve, time));
+    }
+
+    for (const [spriteKey, curve] of Object.entries(clip.alphas ?? {}) as [PrefabAnimationAlphaKey, NumberKeyframe[]][]) {
+      this.playerPrefabAnimationSprites[spriteKey].setAlpha(this.sampleNumberCurve(curve, time));
+    }
+  }
+
+  private resetPlayerPrefabAnimationPose() {
+    if (!this.playerPrefabAnimationNodes || !this.playerPrefabAnimationSprites) {
+      return;
+    }
+
+    Object.values(this.playerPrefabAnimationNodes).forEach((node) => {
+      node.setPosition(node.baseX, node.baseY);
+      node.setRotation(node.baseRotation);
+      node.setScale(node.baseScaleX, node.baseScaleY);
+    });
+
+    Object.values(this.playerPrefabAnimationSprites).forEach((sprite) => {
+      sprite.setAlpha(sprite.baseAlpha);
+    });
+  }
+
+  private applyPrefabNodePosition(node: Phaser.GameObjects.Container, x: number, y: number) {
+    node.setPosition(x, -y);
+  }
+
+  private sampleNumberCurve(curve: readonly NumberKeyframe[], time: number) {
+    const nextFrameIndex = curve.findIndex((keyframe) => keyframe.time >= time);
+
+    if (nextFrameIndex === -1) {
+      return curve[curve.length - 1].value;
+    }
+
+    if (nextFrameIndex === 0) {
+      return curve[0].value;
+    }
+
+    const previousFrame = curve[nextFrameIndex - 1];
+    const nextFrame = curve[nextFrameIndex];
+    const progress = (time - previousFrame.time) / (nextFrame.time - previousFrame.time);
+
+    return Phaser.Math.Linear(previousFrame.value, nextFrame.value, progress);
+  }
+
+  private sampleVectorCurve(curve: readonly VectorKeyframe[], time: number) {
+    const nextFrameIndex = curve.findIndex((keyframe) => keyframe.time >= time);
+
+    if (nextFrameIndex === -1) {
+      const lastFrame = curve[curve.length - 1];
+
+      return { x: lastFrame.x, y: lastFrame.y };
+    }
+
+    if (nextFrameIndex === 0) {
+      return { x: curve[0].x, y: curve[0].y };
+    }
+
+    const previousFrame = curve[nextFrameIndex - 1];
+    const nextFrame = curve[nextFrameIndex];
+    const progress = (time - previousFrame.time) / (nextFrame.time - previousFrame.time);
+
+    return {
+      x: Phaser.Math.Linear(previousFrame.x, nextFrame.x, progress),
+      y: Phaser.Math.Linear(previousFrame.y, nextFrame.y, progress)
+    };
   }
 
   private createCollisionMask() {
@@ -561,7 +1398,7 @@ class MainScene extends Phaser.Scene {
     if (!this.player) {
       return;
     }
-    console.log(`Attempting to lift player out of ladder from y=${this.player.y}`)
+    // console.log(`Attempting to lift player out of ladder from y=${this.player.y}`)
 
     for (let lift = 1; lift <= PLAYER_LADDER_EXIT_LIFT; lift += 1) {
       const testY = this.player.y - lift;
@@ -570,7 +1407,7 @@ class MainScene extends Phaser.Scene {
     console.log('Lifting player out of ladder');
         this.player.y = testY;
         this.playerVelocityY = 0;
-    console.log(`Attempting to lift player out of ladder to y=${this.player.y}`)
+    // console.log(`Attempting to lift player out of ladder to y=${this.player.y}`)
         return;
       }
     }
