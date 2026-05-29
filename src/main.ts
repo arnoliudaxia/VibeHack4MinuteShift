@@ -581,6 +581,7 @@ class MainScene extends Phaser.Scene {
 
   preload() {
     this.load.image('space', '/assets/scene/space.png');
+    this.load.image('spaceShipFire', '/assets/scene/spaceShipFire.png');
     this.load.image('background', '/assets/scene/spaceShip.png');
     this.load.image('collision', '/assets/scene/physic.png');
     this.load.image('drive', '/assets/scene/ShipRoom/drive.png');
@@ -599,11 +600,6 @@ class MainScene extends Phaser.Scene {
     this.load.image('playerPrefabEyeStun', '/assets/player-prefab/eye-stun.png');
     this.load.image('playerPrefabEyeDefeat', '/assets/player-prefab/eye-defeat.png');
     this.load.audio('bgm', '/assets/Sound/BGM/HOYO-MiX - 危机预知 Crises.mp3');
-    this.load.image('astronautWalkRight1', '/assets/generated_sprites/astronaut_walk_right/walk-1.png');
-    this.load.image('astronautWalkRight2', '/assets/generated_sprites/astronaut_walk_right/walk-2.png');
-    this.load.image('astronautWalkRight4', '/assets/generated_sprites/astronaut_walk_right/walk-4.png');
-    this.load.image('astronautWalkRight5', '/assets/generated_sprites/astronaut_walk_right/walk-5.png');
-    this.load.image('astronautWalkRight6', '/assets/generated_sprites/astronaut_walk_right/walk-6.png');
   }
 
   create() {
@@ -612,6 +608,10 @@ class MainScene extends Phaser.Scene {
     const space = this.add.image(width / 2, height / 2, 'space');
     const spaceScale = Math.max(width / space.width, height / space.height);
     space.setScale(spaceScale).setScrollFactor(0);
+
+    const spaceShipFire = this.add.image(width / 2, height / 2, 'spaceShipFire');
+    const fireScale = Math.max(width / spaceShipFire.width, height / spaceShipFire.height);
+    spaceShipFire.setScale(fireScale).setScrollFactor(0).setVisible(false);
 
     const background = this.add.image(width / 2, height / 2, 'background');
     const scale = Math.max(width / background.width, height / background.height);
@@ -643,7 +643,7 @@ class MainScene extends Phaser.Scene {
 
     const panel = this.add.container(16, 16).setScrollFactor(0);
     const panelBackground = this.add
-      .rectangle(0, 0, 220, 284, 0x0f172a, 0.82)
+      .rectangle(0, 0, 220, 328, 0x0f172a, 0.82)
       .setOrigin(0);
     const soundLabel = this.add.text(14, 21, 'BGM', {
       fontFamily: 'Arial, Helvetica, sans-serif',
@@ -719,28 +719,43 @@ class MainScene extends Phaser.Scene {
       color: '#ffffff'
     });
 
-    const label = this.add.text(14, 241, 'Drive', {
+    const shipFireLabel = this.add.text(14, 241, 'Ship Fire', {
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: '16px',
+      color: '#ffffff'
+    });
+    const shipFireButton = this.add
+      .rectangle(PANEL_CONTROL_X, 236, PANEL_CONTROL_WIDTH, 32, 0x475569, 1)
+      .setOrigin(0)
+      .setInteractive({ useHandCursor: true });
+    const shipFireText = this.add.text(127, 243, 'Hidden', {
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: '15px',
+      color: '#ffffff'
+    });
+
+    const label = this.add.text(14, 285, 'Drive', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '16px',
       color: '#ffffff'
     });
 
     const selectedBackground = this.add
-      .rectangle(PANEL_CONTROL_X, 236, PANEL_CONTROL_WIDTH, 32, 0x334155, 1)
+      .rectangle(PANEL_CONTROL_X, 280, PANEL_CONTROL_WIDTH, 32, 0x334155, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
-    const selectedText = this.add.text(104, 243, 'None', {
+    const selectedText = this.add.text(104, 287, 'None', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#ffffff'
     });
-    const arrow = this.add.text(184, 243, 'v', {
+    const arrow = this.add.text(184, 287, 'v', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#cbd5e1'
     });
 
-    const menu = this.add.container(PANEL_CONTROL_X, 270).setVisible(false);
+    const menu = this.add.container(PANEL_CONTROL_X, 314).setVisible(false);
     const options = [
       { label: 'None', texture: null },
       { label: 'Normal', texture: 'drive' },
@@ -790,6 +805,9 @@ class MainScene extends Phaser.Scene {
       animationLabel,
       animationButton,
       animationText,
+      shipFireLabel,
+      shipFireButton,
+      shipFireText,
       label,
       selectedBackground,
       selectedText,
@@ -808,6 +826,15 @@ class MainScene extends Phaser.Scene {
       this.playPlayerPrefabAnimation(nextAnimation);
       animationText.setText(nextAnimation);
       animationText.setX(nextAnimation.length > 5 ? 116 : 132);
+    });
+
+    shipFireButton.on('pointerdown', () => {
+      const isVisible = !spaceShipFire.visible;
+
+      spaceShipFire.setVisible(isVisible);
+      shipFireButton.setFillStyle(isVisible ? 0xdc2626 : 0x475569, 1);
+      shipFireText.setText(isVisible ? 'Visible' : 'Hidden');
+      shipFireText.setX(isVisible ? 130 : 127);
     });
 
     muteButton.on('pointerdown', () => {

@@ -6,7 +6,7 @@
 
 当前项目使用 Phaser 创建游戏场景，通过 Vite 提供开发服务器和生产构建。游戏入口位于 `src/main.ts`，页面入口位于 `index.html`。
 
-当前场景会加载 `assets/scene/space.png` 作为底层背景，`assets/scene/spaceShip.png` 作为飞船场景，并根据画布尺寸自适应缩放。玩家目前使用一个胶囊形 `Graphics` 对象表示，通过 WASD 控制移动。
+当前场景会加载 `assets/scene/space.png` 作为底层背景，`assets/scene/spaceShip.png` 作为飞船场景，并根据画布尺寸自适应缩放。玩家逻辑仍使用一个隐藏的胶囊形 `Graphics` 对象作为移动和碰撞锚点，实际显示层使用 Unity `Player.prefab` 复刻出的分层 2D 角色。
 
 ## 技术栈
 
@@ -20,6 +20,7 @@
 .
 ├── assets/          # 游戏资源
 │   ├── scene/       # 场景图、覆盖层和物理标记图
+│   ├── player-prefab/ # 从 Unity prefab 复制出的玩家分层贴图
 │   └── Sound/       # 音频资源
 ├── src/
 │   ├── main.ts      # 游戏入口和主场景
@@ -132,6 +133,67 @@ ladderData[index] = r === 255 && g === 0 && b === 0 ? 1 : 0;
 - 玩家离开红色 `#FF0000` 区域时，切回 `Normal`。
 
 UI 中的 `Player State` 会显示当前状态。
+
+## 玩家渲染与动画
+
+玩家当前由两部分组成：
+
+- 隐藏胶囊体：`Phaser.GameObjects.Graphics`，只作为移动、碰撞、梯子检测和状态机坐标锚点。
+- prefab 视觉层：由 `assets/player-prefab/` 下的多张 PNG 组合成分层角色，跟随隐藏胶囊体坐标移动。
+
+视觉层来源于 Unity 的 `Player.prefab`，当前复刻了可见部件，包括身体、头、头发、眼睛、胸甲、盾牌、弓和箭矢等。角色默认朝右，水平移动时会根据 `A` / `D` 输入翻转视觉层；该翻转只影响显示，不影响碰撞体和物理逻辑。
+
+### 动画状态机
+
+prefab 视觉层维护独立动画状态机，默认状态为 `Idle`。动画状态机只控制显示节点的位置、旋转、缩放和部分贴图透明度，不改变玩家物理状态。
+
+当前可用动画：
+
+- `Idle`：默认待机动画。
+- `Walk`：行走动画。
+- `Run`：跑步动画。
+- `Attack`：攻击动画，会显示/隐藏箭矢。
+- `Jump`：跳跃动画。
+- `Dance`：跳舞动画。
+- `Stun`：眩晕动画，会隐藏普通眼睛并显示旋转的眩晕眼。
+- `Defeat`：失败动画，会隐藏普通眼睛并显示失败眼。
+
+这些动画由 Unity `.anim` 文件中的曲线手动映射到 Phaser：
+
+- `Idle.anim`
+- `Walk.anim`
+- `Run.anim`
+- `Attack.anim`
+- `Jump.anim`
+- `Dance.anim`
+- `Stun.anim`
+- `Defeat.anim`
+
+### UI 切换
+
+左上角调试面板包含 `Animation` 行。点击右侧按钮会按以下顺序循环切换动画：
+
+```text
+Idle -> Walk -> Run -> Attack -> Jump -> Dance -> Stun -> Defeat -> Idle
+```
+
+### 调用接口
+
+运行时也可以通过浏览器控制台调用动画状态机：
+
+```js
+window.playPlayerAnimation('Idle')
+window.playPlayerAnimation('Walk')
+window.playPlayerAnimation('Run')
+window.playPlayerAnimation('Attack')
+window.playPlayerAnimation('Jump')
+window.playPlayerAnimation('Dance')
+window.playPlayerAnimation('Stun')
+window.playPlayerAnimation('Defeat')
+window.getPlayerAnimationState()
+```
+
+`playPlayerAnimation(...)` 返回 `boolean`，传入不存在的动画名时返回 `false`。
 
 ### 调试可视化
 
