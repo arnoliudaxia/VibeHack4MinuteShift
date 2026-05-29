@@ -121,6 +121,31 @@ ladderData[index] = r === 255 && g === 0 && b === 0 ? 1 : 0;
 - `Driving`
 - `Driving-Repairing`
 
+当前 `updatePlayerState()` 的状态转换：
+
+```mermaid
+stateDiagram-v2
+    [*] --> Normal
+
+    Climbing --> Climbing: overlapsLadder
+    Normal --> Climbing: overlapsLadder && (W || S)
+    Driving --> Climbing: overlapsLadder && (W || S)
+    DrivingRepairing --> Climbing: overlapsLadder && (W || S)
+
+    Normal --> Driving: overlapsDriveRoom
+    Climbing --> Driving: !overlapsLadder && overlapsDriveRoom
+    DrivingRepairing --> DrivingRepairing: overlapsDriveRoom
+
+    Driving --> DrivingRepairing: overlapsDriveRoom && driveWrong && E
+    DrivingRepairing --> Driving: repairComplete && overlapsDriveRoom
+
+    Climbing --> Normal: !overlapsLadder && !overlapsDriveRoom
+    Driving --> Normal: !overlapsDriveRoom
+    DrivingRepairing --> Normal: !overlapsDriveRoom
+
+    state "Driving-Repairing" as DrivingRepairing
+```
+
 `Normal` 状态规则：
 
 - 重力开启。
@@ -133,6 +158,7 @@ ladderData[index] = r === 255 && g === 0 && b === 0 ? 1 : 0;
 - 重力关闭。
 - 白色 `#FFFFFF` 碰撞检测关闭。
 - `A` / `D` 仍然响应，允许左右移动。
+- 已处于 `Climbing` 时，只要下一帧仍接触红色 `#FF0000` 区域，就保持 `Climbing`，不再要求持续按 `W` 或 `S`。
 - 玩家离开红色 `#FF0000` 区域时，切回 `Normal`。
 
 `Driving` 状态规则：

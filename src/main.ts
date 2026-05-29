@@ -5,6 +5,10 @@ const SCENE_WIDTH = 1672;
 const SCENE_HEIGHT = 941;
 const PLAYER_WIDTH = 38;
 const PLAYER_HEIGHT = 72;
+const PLAYER_MAX_HEALTH = 100;
+const PLAYER_HEALTH_BAR_WIDTH = 44;
+const PLAYER_HEALTH_BAR_HEIGHT = 7;
+const PLAYER_HEALTH_BAR_OFFSET_Y = -PLAYER_HEIGHT / 2 - 14;
 const PLAYER_SPEED = 260;
 const PLAYER_GRAVITY = 1100;
 const PLAYER_MAX_FALL_SPEED = 900;
@@ -128,10 +132,20 @@ const ROOM_CONFIGS: RoomConfig[] = [
       { label: 'Normal', textureKey: 'drive', assetPath: '/assets/scene/ShipRoom/drive.png' },
       { label: 'Wrong', textureKey: 'driveFire', assetPath: '/assets/scene/ShipRoom/driveFire.png' }
     ]
+  },
+  {
+    id: 'heal',
+    label: 'Heal',
+    defaultTextureKey: 'heal',
+    maskTextureKey: 'heal',
+    layerOptions: [
+      { label: 'Normal', textureKey: 'heal', assetPath: '/assets/scene/ShipRoom/heal.png' }
+    ]
   }
 ];
 
 const DRIVE_ROOM_CONFIG = ROOM_CONFIGS.find((room) => room.id === 'drive') ?? ROOM_CONFIGS[0];
+const HEAL_ROOM_CONFIG = ROOM_CONFIGS.find((room) => room.id === 'heal') ?? ROOM_CONFIGS[0];
 
 const PLAYER_PREFAB_ANIMATION_NAMES: PlayerPrefabAnimationName[] = [
   'Idle',
@@ -601,6 +615,8 @@ const PLAYER_PREFAB_ANIMATIONS: Record<PlayerPrefabAnimationName, PrefabAnimatio
 
 class MainScene extends Phaser.Scene {
   private player?: Phaser.GameObjects.Graphics;
+  private playerHealthBar?: Phaser.GameObjects.Graphics;
+  private playerHealth = PLAYER_MAX_HEALTH;
   private playerProgressBar?: Phaser.GameObjects.Graphics;
   private progressSliderFill?: Phaser.GameObjects.Rectangle;
   private progressSliderHandle?: Phaser.GameObjects.Arc;
@@ -682,6 +698,11 @@ class MainScene extends Phaser.Scene {
     const scale = Math.max(width / background.width, height / background.height);
     background.setScale(scale).setScrollFactor(0);
 
+    this.add
+      .image(width / 2, height / 2, HEAL_ROOM_CONFIG.defaultTextureKey)
+      .setDisplaySize(SCENE_WIDTH * scale, SCENE_HEIGHT * scale)
+      .setVisible(true);
+
     const driveOverlay = this.add
       .image(width / 2, height / 2, DRIVE_ROOM_CONFIG.defaultTextureKey)
       .setDisplaySize(SCENE_WIDTH * scale, SCENE_HEIGHT * scale)
@@ -704,6 +725,8 @@ class MainScene extends Phaser.Scene {
       .strokeRoundedRect(-PLAYER_WIDTH / 2, -PLAYER_HEIGHT / 2, PLAYER_WIDTH, PLAYER_HEIGHT, PLAYER_WIDTH / 2)
       .setVisible(false);
     this.playerPrefabVisual = this.createPlayerPrefabVisual(this.player.x, this.player.y);
+    this.playerHealthBar = this.add.graphics();
+    this.updatePlayerHealthBar();
     this.playerProgressBar = this.add.graphics();
     this.playerProgressBar.setVisible(false);
     this.updatePlayerProgressBar();
@@ -1045,6 +1068,7 @@ class MainScene extends Phaser.Scene {
 
     if (direction.x === 0 && direction.y === 0) {
       this.syncPlayerPrefabVisual();
+      this.updatePlayerHealthBar();
       this.updatePlayerProgressBar();
       return;
     }
@@ -1081,6 +1105,7 @@ class MainScene extends Phaser.Scene {
 
     this.updatePlayerState(this.keys.W.isDown || this.keys.S.isDown);
     this.syncPlayerPrefabVisual();
+    this.updatePlayerHealthBar();
     this.updatePlayerProgressBar();
   }
 
@@ -1196,6 +1221,27 @@ class MainScene extends Phaser.Scene {
     }
 
     this.playerPrefabVisual.setPosition(this.player.x, this.player.y);
+  }
+
+  private updatePlayerHealthBar() {
+    if (!this.player || !this.playerHealthBar) {
+      return;
+    }
+
+    const healthRatio = Phaser.Math.Clamp(this.playerHealth / PLAYER_MAX_HEALTH, 0, 1);
+    const x = this.player.x - PLAYER_HEALTH_BAR_WIDTH / 2;
+    const y = this.player.y + PLAYER_HEALTH_BAR_OFFSET_Y;
+
+    this.playerHealthBar
+      .clear()
+      .fillStyle(0x000000, 0.8)
+      .fillRoundedRect(x - 2, y - 2, PLAYER_HEALTH_BAR_WIDTH + 4, PLAYER_HEALTH_BAR_HEIGHT + 4, 3)
+      .fillStyle(0x7f1d1d, 1)
+      .fillRoundedRect(x, y, PLAYER_HEALTH_BAR_WIDTH, PLAYER_HEALTH_BAR_HEIGHT, 2)
+      .fillStyle(0x22c55e, 1)
+      .fillRoundedRect(x, y, PLAYER_HEALTH_BAR_WIDTH * healthRatio, PLAYER_HEALTH_BAR_HEIGHT, 2)
+      .lineStyle(1, 0xffffff, 0.8)
+      .strokeRoundedRect(x, y, PLAYER_HEALTH_BAR_WIDTH, PLAYER_HEALTH_BAR_HEIGHT, 2);
   }
 
   private updatePlayerProgressBar() {
