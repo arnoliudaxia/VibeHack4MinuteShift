@@ -221,12 +221,33 @@ const ROOM_CONFIGS: RoomConfig[] = [
     layerOptions: [
       { label: 'Normal', textureKey: 'workshop', assetPath: '/assets/scene/ShipRoom/workshop.png' }
     ]
+  },
+  {
+    id: 'living',
+    label: 'Living',
+    defaultTextureKey: 'living',
+    maskTextureKey: 'living',
+    layerOptions: [
+      { label: 'Normal', textureKey: 'living', assetPath: '/assets/scene/ShipRoom/living.png' }
+    ]
+  },
+  {
+    id: 'repo',
+    label: 'Repo',
+    defaultTextureKey: 'repoFull',
+    maskTextureKey: 'repoFull',
+    layerOptions: [
+      { label: 'Full', textureKey: 'repoFull', assetPath: '/assets/scene/ShipRoom/RepoFull.png' },
+      { label: 'Empty', textureKey: 'repoEmpty', assetPath: '/assets/scene/ShipRoom/RepoEmpty.png' }
+    ]
   }
 ];
 
 const DRIVE_ROOM_CONFIG = ROOM_CONFIGS.find((room) => room.id === 'drive') ?? ROOM_CONFIGS[0];
 const HEAL_ROOM_CONFIG = ROOM_CONFIGS.find((room) => room.id === 'heal') ?? ROOM_CONFIGS[0];
 const WORKSHOP_ROOM_CONFIG = ROOM_CONFIGS.find((room) => room.id === 'workshop') ?? ROOM_CONFIGS[0];
+const LIVING_ROOM_CONFIG = ROOM_CONFIGS.find((room) => room.id === 'living') ?? ROOM_CONFIGS[0];
+const REPO_ROOM_CONFIG = ROOM_CONFIGS.find((room) => room.id === 'repo') ?? ROOM_CONFIGS[0];
 
 const PLAYER_PREFAB_ANIMATION_NAMES: PlayerPrefabAnimationName[] = [
   'Idle',
@@ -710,6 +731,7 @@ class MainScene extends Phaser.Scene {
   private playerPrefabAnimationTime = 0;
   private keys?: PlayerKeys;
   private driveOverlay?: Phaser.GameObjects.Image;
+  private repoOverlay?: Phaser.GameObjects.Image;
   private outerWrongOverlay?: Phaser.GameObjects.Image;
   private isOuterWrong = false;
   private outerRepairButton?: Phaser.GameObjects.Rectangle;
@@ -720,6 +742,9 @@ class MainScene extends Phaser.Scene {
   private driveStateButton?: Phaser.GameObjects.Rectangle;
   private driveSelectedText?: Phaser.GameObjects.Text;
   private currentDriveRoomOption = 'Normal';
+  private repoStateButton?: Phaser.GameObjects.Rectangle;
+  private repoSelectedText?: Phaser.GameObjects.Text;
+  private currentRepoRoomOption = 'Full';
   private bgm?: VolumeSound;
   private isBgmMuted = true;
   private isGravityEnabled = true;
@@ -835,6 +860,16 @@ class MainScene extends Phaser.Scene {
       .setDisplaySize(SCENE_WIDTH * scale, SCENE_HEIGHT * scale)
       .setVisible(true);
 
+    this.add
+      .image(width / 2, height / 2, LIVING_ROOM_CONFIG.defaultTextureKey)
+      .setDisplaySize(SCENE_WIDTH * scale, SCENE_HEIGHT * scale)
+      .setVisible(true);
+
+    this.repoOverlay = this.add
+      .image(width / 2, height / 2, REPO_ROOM_CONFIG.defaultTextureKey)
+      .setDisplaySize(SCENE_WIDTH * scale, SCENE_HEIGHT * scale)
+      .setVisible(true);
+
     const driveOverlay = this.add
       .image(width / 2, height / 2, DRIVE_ROOM_CONFIG.defaultTextureKey)
       .setDisplaySize(SCENE_WIDTH * scale, SCENE_HEIGHT * scale)
@@ -904,7 +939,7 @@ class MainScene extends Phaser.Scene {
 
     const panel = this.add.container(16, 16).setScrollFactor(0);
     const panelBackground = this.add
-      .rectangle(0, 0, 220, 536, 0x0f172a, 0.82)
+      .rectangle(0, 0, 220, 580, 0x0f172a, 0.82)
       .setOrigin(0);
     const playerGroupLabel = this.add.text(14, 16, 'Player', {
       fontFamily: 'Arial, Helvetica, sans-serif',
@@ -1076,6 +1111,21 @@ class MainScene extends Phaser.Scene {
     });
     this.updateOuterWrongUi();
 
+    const repoLabel = this.add.text(14, 532, REPO_ROOM_CONFIG.label, {
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: '16px',
+      color: '#ffffff'
+    });
+    this.repoStateButton = this.add
+      .rectangle(PANEL_CONTROL_X, 527, PANEL_CONTROL_WIDTH, 32, 0x22c55e, 1)
+      .setOrigin(0)
+      .setInteractive({ useHandCursor: true });
+    this.repoSelectedText = this.add.text(126, 534, 'Full', {
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: '15px',
+      color: '#ffffff'
+    });
+
     panel.add([
       panelBackground,
       playerGroupLabel,
@@ -1109,11 +1159,18 @@ class MainScene extends Phaser.Scene {
       this.coordinateText,
       outerLabel,
       this.outerRepairButton,
-      this.outerRepairText
+      this.outerRepairText,
+      repoLabel,
+      this.repoStateButton,
+      this.repoSelectedText
     ]);
 
     selectedBackground.on('pointerdown', () => {
       this.setDriveRoomOption(this.currentDriveRoomOption === 'Wrong' ? 'Normal' : 'Wrong');
+    });
+
+    this.repoStateButton.on('pointerdown', () => {
+      this.setRepoRoomOption(this.currentRepoRoomOption === 'Full' ? 'Empty' : 'Full');
     });
 
     animationButton.on('pointerdown', () => {
@@ -1758,6 +1815,20 @@ class MainScene extends Phaser.Scene {
     }
 
     this.driveOverlay.setTexture(option.textureKey).setVisible(true);
+  }
+
+  private setRepoRoomOption(label: string) {
+    const option = REPO_ROOM_CONFIG.layerOptions.find((roomOption) => roomOption.label === label);
+
+    if (!option || !option.textureKey || !this.repoOverlay || !this.repoSelectedText) {
+      return;
+    }
+
+    this.currentRepoRoomOption = option.label;
+    this.repoSelectedText.setText(option.label);
+    this.repoSelectedText.setX(option.label === 'Empty' ? 118 : 126);
+    this.repoStateButton?.setFillStyle(option.label === 'Empty' ? 0x475569 : 0x22c55e, 1);
+    this.repoOverlay.setTexture(option.textureKey).setVisible(true);
   }
 
   private updateDriveWarningSignVisibility() {
