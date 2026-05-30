@@ -55,11 +55,18 @@ const PLAYER_HEALTH_BAR_HEIGHT = 7;
 // VFX
 const DRIVE_WARNING_SIGN_X = 1200;
 const DRIVE_WARNING_SIGN_Y = 300;
+const LIVING_WARNING_SIGN_X = 800;
+const LIVING_WARNING_SIGN_Y = 280;
+const PLANT_WARNING_SIGN_X = 850;
+const PLANT_WARNING_SIGN_Y = 450;
 const DRIVE_WARNING_SIGN_SIZE = 72;
 const ROCK_WARNING_SIGN_SIZE = 72;
 const ROCK_WARNING_SIGN_X = 1672-ROCK_WARNING_SIGN_SIZE;
 const ROCK_WARNING_SIGN_Y = 140;
 const WARNING_SIGN_BLINK_SPEED = 5;
+const SWAP_WARNING_DURATION = 5000;
+const SWAP_WARNING_ICON_SIZE = 180;
+const SWAP_WARNING_Y = 80;
 const SNOW_NOISE_TEXTURE_KEY = 'snow-noise-texture';
 const SNOW_NOISE_TILE_SIZE = 256;
 const SNOW_NOISE_DOTS = 5600;
@@ -929,7 +936,12 @@ class MainScene extends Phaser.Scene {
   private outerRepairButton?: Phaser.GameObjects.Rectangle;
   private outerRepairText?: Phaser.GameObjects.Text;
   private driveWarningSign?: Phaser.GameObjects.Image;
+  private livingWarningSign?: Phaser.GameObjects.Image;
+  private plantWarningSign?: Phaser.GameObjects.Image;
   private rockWarningSign?: Phaser.GameObjects.Image;
+  private swapWarningSign?: Phaser.GameObjects.Image;
+  private swapWarningText?: Phaser.GameObjects.Text;
+  private swapWarningRemaining = 0;
   private snowNoiseOverlay?: Phaser.GameObjects.TileSprite;
   private snowNoiseBaseLayer?: Phaser.GameObjects.TileSprite;
   private snowNoiseFlickerTimer = 0;
@@ -1220,9 +1232,35 @@ class MainScene extends Phaser.Scene {
       .image(DRIVE_WARNING_SIGN_X, DRIVE_WARNING_SIGN_Y, 'warningSign')
       .setDisplaySize(DRIVE_WARNING_SIGN_SIZE, DRIVE_WARNING_SIGN_SIZE)
       .setVisible(false);
+    this.livingWarningSign = this.add
+      .image(LIVING_WARNING_SIGN_X, LIVING_WARNING_SIGN_Y, 'warningSign')
+      .setDisplaySize(DRIVE_WARNING_SIGN_SIZE, DRIVE_WARNING_SIGN_SIZE)
+      .setVisible(false);
+    this.plantWarningSign = this.add
+      .image(PLANT_WARNING_SIGN_X, PLANT_WARNING_SIGN_Y, 'warningSign')
+      .setDisplaySize(DRIVE_WARNING_SIGN_SIZE, DRIVE_WARNING_SIGN_SIZE)
+      .setVisible(false);
     this.rockWarningSign = this.add
       .image(ROCK_WARNING_SIGN_X, ROCK_WARNING_SIGN_Y, 'warningSignRock')
       .setDisplaySize(ROCK_WARNING_SIGN_SIZE*2, ROCK_WARNING_SIGN_SIZE)
+      .setVisible(false);
+    this.swapWarningSign = this.add
+      .image(width /2, SWAP_WARNING_Y, 'warningSignRock')
+      .setDisplaySize(SWAP_WARNING_ICON_SIZE*2, SWAP_WARNING_ICON_SIZE)
+      .setDepth(10020)
+      .setScrollFactor(0)
+      .setVisible(false);
+    this.swapWarningText = this.add
+      .text(width / 2, SWAP_WARNING_Y + SWAP_WARNING_ICON_SIZE / 2 + 18, '', {
+        fontFamily: 'Arial, Helvetica, sans-serif',
+        fontSize: '32px',
+        color: '#ffffff',
+        stroke: '#020617',
+        strokeThickness: 5
+      })
+      .setOrigin(0.5, 0)
+      .setDepth(10020)
+      .setScrollFactor(0)
       .setVisible(false);
 
     this.createCollisionMask();
@@ -1676,12 +1714,31 @@ class MainScene extends Phaser.Scene {
       fontSize: '15px',
       color: '#ffffff'
     });
+    const swapWarningLabel = this.add.text(14, 94, 'Swap Warn', {
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: '15px',
+      color: '#ffffff'
+    });
+    const swapWarningButton = this.add
+      .rectangle(PANEL_CONTROL_X, 89, PANEL_CONTROL_WIDTH, 32, 0xf59e0b, 1)
+      .setOrigin(0)
+      .setInteractive({ useHandCursor: true });
+    const swapWarningButtonText = this.add.text(132, 96, 'Simulate', {
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: '15px',
+      color: '#ffffff'
+    });
 
+<<<<<<< Updated upstream
     const shipEnergyLabel = this.add.text(14, 98, 'Ship Energy', {
+=======
+    const resourcesLabel = this.add.text(14, 136, 'Resources', {
+>>>>>>> Stashed changes
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '18px',
       color: '#93c5fd'
     });
+<<<<<<< Updated upstream
     this.shipEnergyText = this.add.text(14, 128, `${this.shipEnergy}`, {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '14px',
@@ -1694,6 +1751,9 @@ class MainScene extends Phaser.Scene {
       color: '#93c5fd'
     });
     this.resourcesText = this.add.text(14, 190, '', {
+=======
+    this.resourcesText = this.add.text(14, 166, '', {
+>>>>>>> Stashed changes
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '14px',
       color: '#ffffff',
@@ -1903,8 +1963,14 @@ class MainScene extends Phaser.Scene {
       teleportLabel,
       this.teleportButton,
       this.teleportText,
+<<<<<<< Updated upstream
       shipEnergyLabel,
       this.shipEnergyText,
+=======
+      swapWarningLabel,
+      swapWarningButton,
+      swapWarningButtonText,
+>>>>>>> Stashed changes
       resourcesLabel,
       this.resourcesText,
       playerTwoPanelLabel,
@@ -1964,6 +2030,10 @@ class MainScene extends Phaser.Scene {
 
     this.teleportButton.on('pointerdown', () => {
       this.swapPlayerPositions();
+    });
+
+    swapWarningButton.on('pointerdown', () => {
+      this.startSwapWarningCountdown();
     });
 
     animationButton.on('pointerdown', () => {
@@ -2661,7 +2731,11 @@ class MainScene extends Phaser.Scene {
     this.updateAliens(delta);
     this.updateSnowNoiseOverlay(delta);
     this.updateDriveWarningSign(delta);
+<<<<<<< Updated upstream
     this.updateShipEnergy(delta);
+=======
+    this.updateSwapWarningCountdown(delta);
+>>>>>>> Stashed changes
 
     if (this.keys && Phaser.Input.Keyboard.JustDown(this.keys.H)) {
       this.toggleUiPanelVisibility();
@@ -4010,6 +4084,7 @@ class MainScene extends Phaser.Scene {
         this.currentLivingRoomOption = optionLabel;
       }
     );
+    this.updateLivingWarningSignVisibility();
   }
 
   private setPlantRoomOption(label: string) {
@@ -4023,6 +4098,7 @@ class MainScene extends Phaser.Scene {
         this.currentPlantRoomOption = optionLabel;
       }
     );
+    this.updatePlantWarningSignVisibility();
   }
 
   private setFireRoomOption(
@@ -4071,8 +4147,36 @@ class MainScene extends Phaser.Scene {
     this.driveWarningSign.setVisible(isVisible).setAlpha(isVisible ? 1 : 0);
   }
 
+  private updateLivingWarningSignVisibility() {
+    if (!this.livingWarningSign) {
+      return;
+    }
+
+    const isVisible = this.currentLivingRoomOption === 'Wrong';
+
+    this.driveWarningBlinkTime = 0;
+    this.livingWarningSign.setVisible(isVisible).setAlpha(isVisible ? 1 : 0);
+  }
+
+  private updatePlantWarningSignVisibility() {
+    if (!this.plantWarningSign) {
+      return;
+    }
+
+    const isVisible = this.currentPlantRoomOption === 'Wrong';
+
+    this.driveWarningBlinkTime = 0;
+    this.plantWarningSign.setVisible(isVisible).setAlpha(isVisible ? 1 : 0);
+  }
+
   private updateDriveWarningSign(delta: number) {
-    if (!this.driveWarningSign?.visible && !this.rockWarningSign?.visible) {
+    if (
+      !this.driveWarningSign?.visible &&
+      !this.livingWarningSign?.visible &&
+      !this.plantWarningSign?.visible &&
+      !this.rockWarningSign?.visible &&
+      !this.swapWarningSign?.visible
+    ) {
       return;
     }
 
@@ -4085,8 +4189,20 @@ class MainScene extends Phaser.Scene {
       this.driveWarningSign.setAlpha(alpha);
     }
 
+    if (this.livingWarningSign?.visible) {
+      this.livingWarningSign.setAlpha(alpha);
+    }
+
+    if (this.plantWarningSign?.visible) {
+      this.plantWarningSign.setAlpha(alpha);
+    }
+
     if (this.rockWarningSign?.visible) {
       this.rockWarningSign.setAlpha(alpha);
+    }
+
+    if (this.swapWarningSign?.visible) {
+      this.swapWarningSign.setAlpha(alpha);
     }
   }
 
@@ -4105,6 +4221,37 @@ class MainScene extends Phaser.Scene {
     }
 
     this.rockWarningSign.setVisible(false).setAlpha(0);
+  }
+
+  private startSwapWarningCountdown() {
+    this.swapWarningRemaining = SWAP_WARNING_DURATION;
+    this.driveWarningBlinkTime = 0;
+    this.swapWarningSign?.setVisible(true).setAlpha(1);
+    this.swapWarningText?.setVisible(true);
+    this.updateSwapWarningText();
+  }
+
+  private updateSwapWarningCountdown(delta: number) {
+    if (this.swapWarningRemaining <= 0) {
+      return;
+    }
+
+    this.swapWarningRemaining = Math.max(this.swapWarningRemaining - delta, 0);
+    this.updateSwapWarningText();
+
+    if (this.swapWarningRemaining === 0) {
+      this.swapWarningSign?.setVisible(false).setAlpha(0);
+      this.swapWarningText?.setVisible(false);
+    }
+  }
+
+  private updateSwapWarningText() {
+    if (!this.swapWarningText) {
+      return;
+    }
+
+    const remainingSeconds = Math.ceil(this.swapWarningRemaining / 1000);
+    this.swapWarningText.setText(`还有${remainingSeconds}秒交换`);
   }
 
   private isRepairingState(state: PlayerState) {
