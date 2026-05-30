@@ -24,6 +24,7 @@ const PLAYER_REPO_PROGRESS_PER_SECOND = 0.5;
 const PLAYER_SWAP_IMPULSE_SPEED = 500;
 const PLAYER_SWAP_IMPULSE_DURATION = 1000;
 const PLAYER_OUTER_REPAIR_PROGRESS_PER_SECOND = 0.1;
+const PLAYER_ATTACK_DISTANCE = 130;
 
 const PLAYER_PREFAB_CHARACTER_SCALE = 2.0872;
 const PLAYER_PREFAB_PIXELS_PER_UNIT = 30;
@@ -119,7 +120,12 @@ const ASTEROID_ASSETS: AsteroidAsset[] = [
 const PLAYER_HAND_TOOL_ASSETS: PlayerHandToolAsset[] = [
   { key: null, label: 'None' },
   { key: 'playerHandToolBow', label: 'Bow', path: '/assets/player-prefab/handTool/bow.png' },
-  { key: 'playerHandToolFireExtinguisher', label: 'Extinguisher', path: '/assets/player-prefab/handTool/fireExtinguisher.png' }
+  { key: 'playerHandToolFireExtinguisher', label: 'Extinguisher', path: '/assets/player-prefab/handTool/fireExtinguisher.png' },
+  {
+    key: 'playerHandToolAxe',
+    label: 'Axe',
+    path: '/assets/player-prefab/handTool/FA_WP_Main_Axe_004_WoodGray.png'
+  }
 ];
 
 type AlienSprite = Phaser.GameObjects.Container & {
@@ -1100,7 +1106,6 @@ class MainScene extends Phaser.Scene {
     this.load.image('playerPrefabBowLineDown', '/assets/player-prefab/bow-line-down.png');
     this.load.image('playerPrefabBow', '/assets/player-prefab/bow.png');
     this.load.image('playerPrefabBowLineUp', '/assets/player-prefab/bow-line-up.png');
-    this.load.image('playerPrefabArrow', '/assets/player-prefab/arrow.png');
     this.load.image('playerPrefabEyeStun', '/assets/player-prefab/eye-stun.png');
     this.load.image('playerPrefabEyeDefeat', '/assets/player-prefab/eye-defeat.png');
     this.load.audio('bgm', '/assets/Sound/BGM/HOYO-MiX - 危机预知 Crises.mp3');
@@ -2437,6 +2442,7 @@ class MainScene extends Phaser.Scene {
   }
 
   private onSecondPlayerInteract() {
+    this.performPlayerAttack('player2');
   }
 
   private getPlayerMovementInputDirection() {
@@ -2555,6 +2561,10 @@ class MainScene extends Phaser.Scene {
 
     if (this.keys && Phaser.Input.Keyboard.JustDown(this.keys.H)) {
       this.toggleUiPanelVisibility();
+    }
+
+    if (this.keys && Phaser.Input.Keyboard.JustDown(this.keys.E)) {
+      this.performPlayerAttack('player1');
     }
 
     if (!this.player || !this.keys) {
@@ -2717,12 +2727,11 @@ class MainScene extends Phaser.Scene {
     );
     this.setPlayerHandTool(this.currentHandToolIndex);
     const arrow = this.createPrefabNode(bow, 0.005, -0.211, -90);
-    const arrowSprite = this.addPrefabSprite(arrow, 'playerPrefabArrow', 0, 0, 0.88, 0.36, { alpha: 0 });
 
     this.playerPrefabAnimationNodes = { body, head, handLeft, handRight, bow, stunEyeLeft, stunEyeRight };
     this.playerPrefabAnimationSprites = {
       normalEye,
-      arrow: arrowSprite,
+      arrow: this.addPrefabSprite(arrow, '', 0, 0, 0, 0, { alpha: 0 }),
       stunEyeLeft: stunEyeLeftSprite,
       stunEyeRight: stunEyeRightSprite,
       defeatEyeLeft,
@@ -2775,12 +2784,11 @@ class MainScene extends Phaser.Scene {
     );
     this.setSecondPlayerHandTool(this.secondPlayerHandToolIndex);
     const arrow = this.createPrefabNode(bow, 0.005, -0.211, -90);
-    const arrowSprite = this.addPrefabSprite(arrow, 'playerPrefabArrow', 0, 0, 0.88, 0.36, { alpha: 0 });
 
     this.secondPlayerPrefabAnimationNodes = { body, head, handLeft, handRight, bow, stunEyeLeft, stunEyeRight };
     this.secondPlayerPrefabAnimationSprites = {
       normalEye,
-      arrow: arrowSprite,
+      arrow: this.addPrefabSprite(arrow, '', 0, 0, 0, 0, { alpha: 0 }),
       stunEyeLeft: stunEyeLeftSprite,
       stunEyeRight: stunEyeRightSprite,
       defeatEyeLeft,
@@ -2823,21 +2831,24 @@ class MainScene extends Phaser.Scene {
     height: number,
     options: PrefabSpriteOptions = {}
   ) {
-    const sprite = this.add.image(x, -y, texture).setDisplaySize(width, height) as PrefabAnimationSprite;
+    const sprite = texture
+      ? this.add.image(x, -y, texture).setDisplaySize(width, height)
+      : this.add.image(x, -y, '__MISSING').setDisplaySize(width, height).setVisible(false);
+    const prefabSprite = sprite as PrefabAnimationSprite;
 
-    sprite.baseAlpha = options.alpha ?? 1;
+    prefabSprite.baseAlpha = options.alpha ?? 1;
 
     if (options.alpha !== undefined) {
-      sprite.setAlpha(options.alpha);
+      prefabSprite.setAlpha(options.alpha);
     }
 
     if (options.tint !== undefined) {
-      sprite.setTint(options.tint);
+      prefabSprite.setTint(options.tint);
     }
 
-    parent.add(sprite);
+    parent.add(prefabSprite);
 
-    return sprite;
+    return prefabSprite;
   }
 
   private syncPlayerPrefabVisual() {
@@ -2971,6 +2982,100 @@ class MainScene extends Phaser.Scene {
 
   private onSecondPlayerAlienContact(_amount: number) {
     this.damageSecondPlayer(_amount);
+  }
+
+  private performPlayerAttack(playerId: PlayerId) {
+    const player = this.getPlayerById(playerId);
+
+    if (!player) {
+      return;
+    }
+
+    if (playerId === 'player1') {
+      this.setPlayerHandToolByLabel('Axe');
+      this.playPlayerPrefabAnimation('Attack');
+    } else {
+      this.setSecondPlayerHandToolByLabel('Axe');
+      this.playSecondPlayerPrefabAnimation('Attack');
+    }
+
+    const alien = this.findClosestAlien(player, PLAYER_ATTACK_DISTANCE);
+
+    if (alien) {
+      this.explodeAlien(alien);
+      return;
+    }
+
+    const asteroid = this.findClosestAsteroid(player, PLAYER_ATTACK_DISTANCE);
+
+    if (asteroid) {
+      this.destroyAsteroidByAttack(asteroid);
+    }
+  }
+
+  private findClosestAlien(player: Phaser.GameObjects.Graphics, maxDistance: number) {
+    let closestAlien: AlienSprite | undefined;
+    let closestDistance = maxDistance;
+
+    this.alienSprites.forEach((alien) => {
+      const distance = Phaser.Math.Distance.Between(player.x, player.y, alien.x, alien.y);
+
+      if (distance <= closestDistance) {
+        closestAlien = alien;
+        closestDistance = distance;
+      }
+    });
+
+    return closestAlien;
+  }
+
+  private findClosestAsteroid(player: Phaser.GameObjects.Graphics, maxDistance: number) {
+    let closestAsteroid: AsteroidSprite | undefined;
+    let closestDistance = maxDistance;
+
+    this.asteroids.forEach((asteroid) => {
+      const distance = Phaser.Math.Distance.Between(player.x, player.y, asteroid.x, asteroid.y);
+
+      if (distance <= closestDistance) {
+        closestAsteroid = asteroid;
+        closestDistance = distance;
+      }
+    });
+
+    return closestAsteroid;
+  }
+
+  private explodeAlien(alien: AlienSprite) {
+    const index = this.alienSprites.indexOf(alien);
+
+    if (index !== -1) {
+      this.alienSprites.splice(index, 1);
+    }
+
+    this.alienDamageStates.delete(alien);
+    this.playExplosionTest(alien.x, alien.y);
+    alien.destroy();
+
+    if (this.alienSprites.length === 0) {
+      this.alienReticle?.setVisible(false);
+      this.alienSpawnTimer = 0;
+      this.nextAlienSpawnDelay = Phaser.Math.Between(ALIEN_MIN_SPAWN_DELAY, ALIEN_MAX_SPAWN_DELAY);
+    }
+  }
+
+  private destroyAsteroidByAttack(asteroid: AsteroidSprite) {
+    const index = this.asteroids.indexOf(asteroid);
+
+    if (index !== -1) {
+      this.asteroids.splice(index, 1);
+    }
+
+    if (asteroid === this.pixelAsteroidLaneWarningAsteroid) {
+      this.hideRockWarningSign();
+      this.pixelAsteroidLaneWarningAsteroid = undefined;
+    }
+
+    asteroid.destroy();
   }
 
   private syncSecondPlayerPrefabVisual() {
