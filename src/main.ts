@@ -711,9 +711,13 @@ class MainScene extends Phaser.Scene {
   private keys?: PlayerKeys;
   private driveOverlay?: Phaser.GameObjects.Image;
   private outerWrongOverlay?: Phaser.GameObjects.Image;
+  private isOuterWrong = false;
+  private outerRepairButton?: Phaser.GameObjects.Rectangle;
+  private outerRepairText?: Phaser.GameObjects.Text;
   private driveWarningSign?: Phaser.GameObjects.Image;
   private rockWarningSign?: Phaser.GameObjects.Image;
   private driveWarningBlinkTime = 0;
+  private driveStateButton?: Phaser.GameObjects.Rectangle;
   private driveSelectedText?: Phaser.GameObjects.Text;
   private currentDriveRoomOption = 'Normal';
   private bgm?: VolumeSound;
@@ -900,48 +904,53 @@ class MainScene extends Phaser.Scene {
 
     const panel = this.add.container(16, 16).setScrollFactor(0);
     const panelBackground = this.add
-      .rectangle(0, 0, 220, 416, 0x0f172a, 0.82)
+      .rectangle(0, 0, 220, 536, 0x0f172a, 0.82)
       .setOrigin(0);
-    const soundLabel = this.add.text(14, 21, 'BGM', {
+    const playerGroupLabel = this.add.text(14, 16, 'Player', {
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: '18px',
+      color: '#93c5fd'
+    });
+    const soundLabel = this.add.text(14, 312, 'BGM', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '16px',
       color: '#ffffff'
     });
     const muteButton = this.add
-      .rectangle(PANEL_CONTROL_X, 16, PANEL_CONTROL_WIDTH, 28, 0x475569, 1)
+      .rectangle(PANEL_CONTROL_X, 307, PANEL_CONTROL_WIDTH, 28, 0x475569, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
-    const muteText = this.add.text(119, 22, 'Muted', {
+    const muteText = this.add.text(119, 313, 'Muted', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '14px',
       color: '#ffffff'
     });
 
-    const collisionLabel = this.add.text(14, 65, 'Collision', {
+    const collisionLabel = this.add.text(14, 356, 'Collision', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '16px',
       color: '#ffffff'
     });
     const collisionButton = this.add
-      .rectangle(PANEL_CONTROL_X, 60, PANEL_CONTROL_WIDTH, 28, 0x475569, 1)
+      .rectangle(PANEL_CONTROL_X, 351, PANEL_CONTROL_WIDTH, 28, 0x475569, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
-    const collisionText = this.add.text(127, 66, 'Hidden', {
+    const collisionText = this.add.text(127, 357, 'Hidden', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '14px',
       color: '#ffffff'
     });
 
-    const gravityLabel = this.add.text(14, 109, 'Gravity', {
+    const gravityLabel = this.add.text(14, 142, 'Gravity', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '16px',
       color: '#ffffff'
     });
     const gravityButton = this.add
-      .rectangle(PANEL_CONTROL_X, 104, PANEL_CONTROL_WIDTH, 28, 0x475569, 1)
+      .rectangle(PANEL_CONTROL_X, 137, PANEL_CONTROL_WIDTH, 28, 0x475569, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
-    const gravityText = this.add.text(133, 110, 'On', {
+    const gravityText = this.add.text(133, 143, 'On', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '14px',
       color: '#ffffff'
@@ -950,64 +959,64 @@ class MainScene extends Phaser.Scene {
     this.gravityText = gravityText;
     gravityButton.setFillStyle(0x22c55e, 1);
 
-    const stateLabel = this.add.text(14, 153, 'Player State', {
+    const stateLabel = this.add.text(14, 98, 'Player State', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#ffffff'
     });
-    this.stateText = this.add.text(116, 153, 'Normal', {
+    this.stateText = this.add.text(116, 98, 'Normal', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#ffffff'
     });
 
-    const animationLabel = this.add.text(14, 197, 'Animation', {
+    const animationLabel = this.add.text(14, 186, 'Animation', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '16px',
       color: '#ffffff'
     });
     const animationButton = this.add
-      .rectangle(PANEL_CONTROL_X, 192, PANEL_CONTROL_WIDTH, 32, 0x7c3aed, 1)
+      .rectangle(PANEL_CONTROL_X, 181, PANEL_CONTROL_WIDTH, 32, 0x7c3aed, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
-    const animationText = this.add.text(132, 199, this.playerPrefabAnimationState, {
+    const animationText = this.add.text(132, 188, this.playerPrefabAnimationState, {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#ffffff'
     });
 
-    const shipFireLabel = this.add.text(14, 241, 'Ship Fire', {
+    const shipFireLabel = this.add.text(14, 400, 'Ship Fire', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '16px',
       color: '#ffffff'
     });
     const shipFireButton = this.add
-      .rectangle(PANEL_CONTROL_X, 236, PANEL_CONTROL_WIDTH, 32, 0x475569, 1)
+      .rectangle(PANEL_CONTROL_X, 395, PANEL_CONTROL_WIDTH, 32, 0x475569, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
-    const shipFireText = this.add.text(127, 243, 'Hidden', {
+    const shipFireText = this.add.text(127, 402, 'Hidden', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#ffffff'
     });
 
-    const progressLabel = this.add.text(14, 285, 'Progress', {
+    const progressLabel = this.add.text(14, 230, 'Progress', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '16px',
       color: '#ffffff'
     });
     const progressSliderTrack = this.add
-      .rectangle(PANEL_CONTROL_X, 296, PANEL_SLIDER_WIDTH, 6, 0x334155, 1)
+      .rectangle(PANEL_CONTROL_X, 241, PANEL_SLIDER_WIDTH, 6, 0x334155, 1)
       .setOrigin(0, 0.5)
       .setInteractive(new Phaser.Geom.Rectangle(0, 0, PANEL_SLIDER_WIDTH, 16), Phaser.Geom.Rectangle.Contains);
     this.progressSliderFill = this.add
-      .rectangle(PANEL_CONTROL_X, 296, 0, 6, 0x22c55e, 1)
+      .rectangle(PANEL_CONTROL_X, 241, 0, 6, 0x22c55e, 1)
       .setOrigin(0, 0.5);
     this.progressSliderHandle = this.add
-      .circle(PANEL_CONTROL_X, 296, 8, 0xffffff, 1)
+      .circle(PANEL_CONTROL_X, 241, 8, 0xffffff, 1)
       .setStrokeStyle(2, 0x22c55e)
       .setInteractive(new Phaser.Geom.Circle(8, 8, 10), Phaser.Geom.Circle.Contains);
-    this.progressSliderText = this.add.text(178, 287, '0%', {
+    this.progressSliderText = this.add.text(178, 232, '0%', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '14px',
       color: '#ffffff'
@@ -1015,63 +1024,61 @@ class MainScene extends Phaser.Scene {
     this.input.setDraggable(this.progressSliderHandle);
     this.updateProgressSlider(0);
 
-    const label = this.add.text(14, 329, DRIVE_ROOM_CONFIG.label, {
+    const sceneGroupLabel = this.add.text(14, 274, 'Scene', {
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: '18px',
+      color: '#93c5fd'
+    });
+
+    const label = this.add.text(14, 444, DRIVE_ROOM_CONFIG.label, {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '16px',
       color: '#ffffff'
     });
 
     const selectedBackground = this.add
-      .rectangle(PANEL_CONTROL_X, 324, PANEL_CONTROL_WIDTH, 32, 0x334155, 1)
+      .rectangle(PANEL_CONTROL_X, 439, PANEL_CONTROL_WIDTH, 32, 0x22c55e, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
-    const selectedText = this.add.text(104, 331, 'Normal', {
+    this.driveStateButton = selectedBackground;
+    const selectedText = this.add.text(104, 446, 'Normal', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#ffffff'
     });
     this.driveSelectedText = selectedText;
-    const arrow = this.add.text(184, 331, 'v', {
-      fontFamily: 'Arial, Helvetica, sans-serif',
-      fontSize: '15px',
-      color: '#cbd5e1'
-    });
 
-    const menu = this.add.container(PANEL_CONTROL_X, 358).setVisible(false);
-    DRIVE_ROOM_CONFIG.layerOptions.forEach((option, index) => {
-      const optionY = index * 30;
-      const optionBackground = this.add
-        .rectangle(0, optionY, 112, 30, 0x1e293b, 1)
-        .setOrigin(0)
-        .setInteractive({ useHandCursor: true });
-      const optionLabel = this.add.text(12, optionY + 7, option.label, {
-        fontFamily: 'Arial, Helvetica, sans-serif',
-        fontSize: '14px',
-        color: '#ffffff'
-      });
-
-      optionBackground.on('pointerdown', () => {
-        menu.setVisible(false);
-        this.setDriveRoomOption(option.label);
-      });
-
-      menu.add([optionBackground, optionLabel]);
-    });
-
-    const coordinateLabel = this.add.text(14, 373, 'Position', {
+    const coordinateLabel = this.add.text(14, 54, 'Position', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '16px',
       color: '#ffffff'
     });
-    this.coordinateText = this.add.text(96, 373, 'X: 0 Y: 0', {
+    this.coordinateText = this.add.text(96, 54, 'X: 0 Y: 0', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#ffffff'
     });
     this.updatePlayerCoordinateUi();
 
+    const outerLabel = this.add.text(14, 488, 'Outer', {
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: '16px',
+      color: '#ffffff'
+    });
+    this.outerRepairButton = this.add
+      .rectangle(PANEL_CONTROL_X, 483, PANEL_CONTROL_WIDTH, 32, 0x475569, 1)
+      .setOrigin(0)
+      .setInteractive({ useHandCursor: true });
+    this.outerRepairText = this.add.text(126, 490, 'Normal', {
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: '15px',
+      color: '#ffffff'
+    });
+    this.updateOuterWrongUi();
+
     panel.add([
       panelBackground,
+      playerGroupLabel,
       soundLabel,
       muteButton,
       muteText,
@@ -1094,17 +1101,19 @@ class MainScene extends Phaser.Scene {
       this.progressSliderFill,
       this.progressSliderHandle,
       this.progressSliderText,
+      sceneGroupLabel,
       label,
       selectedBackground,
       selectedText,
-      arrow,
-      menu,
       coordinateLabel,
-      this.coordinateText
+      this.coordinateText,
+      outerLabel,
+      this.outerRepairButton,
+      this.outerRepairText
     ]);
 
     selectedBackground.on('pointerdown', () => {
-      menu.setVisible(!menu.visible);
+      this.setDriveRoomOption(this.currentDriveRoomOption === 'Wrong' ? 'Normal' : 'Wrong');
     });
 
     animationButton.on('pointerdown', () => {
@@ -1123,6 +1132,14 @@ class MainScene extends Phaser.Scene {
       shipFireButton.setFillStyle(isVisible ? 0xdc2626 : 0x475569, 1);
       shipFireText.setText(isVisible ? 'Visible' : 'Hidden');
       shipFireText.setX(isVisible ? 130 : 127);
+    });
+
+    this.outerRepairButton.on('pointerdown', () => {
+      if (!this.isOuterWrong) {
+        return;
+      }
+
+      this.setOuterWrong(false);
     });
 
     const setProgressFromPointer = (pointer: Phaser.Input.Pointer) => {
@@ -1581,8 +1598,24 @@ class MainScene extends Phaser.Scene {
 
   private onPixelAsteroidLaneReachedTriggerX(x: number, y: number) {
     console.log('上面陨石撞到了飞船');
-    this.outerWrongOverlay?.setVisible(true);
+    this.setOuterWrong(true);
     this.playExplosionTest(x, y);
+  }
+
+  private setOuterWrong(isWrong: boolean) {
+    this.isOuterWrong = isWrong;
+    this.outerWrongOverlay?.setVisible(isWrong);
+    this.updateOuterWrongUi();
+  }
+
+  private updateOuterWrongUi() {
+    if (!this.outerRepairButton || !this.outerRepairText) {
+      return;
+    }
+
+    this.outerRepairButton.setFillStyle(this.isOuterWrong ? 0xdc2626 : 0x475569, 1);
+    this.outerRepairText.setText(this.isOuterWrong ? 'Repair' : 'Normal');
+    this.outerRepairText.setX(this.isOuterWrong ? 125 : 126);
   }
 
   private playExplosionTest(x: number, y: number) {
@@ -1715,6 +1748,8 @@ class MainScene extends Phaser.Scene {
 
     this.currentDriveRoomOption = option.label;
     this.driveSelectedText.setText(option.label);
+    this.driveSelectedText.setX(option.label === 'Wrong' ? 112 : 104);
+    this.driveStateButton?.setFillStyle(option.label === 'Wrong' ? 0xdc2626 : 0x22c55e, 1);
     this.updateDriveWarningSignVisibility();
 
     if (!option.textureKey) {
