@@ -349,7 +349,8 @@ const ROOM_CONFIGS: RoomConfig[] = [
     defaultTextureKey: 'living',
     maskTextureKey: 'living',
     layerOptions: [
-      { label: 'Normal', textureKey: 'living', assetPath: '/assets/scene/ShipRoom/living.png' }
+      { label: 'Normal', textureKey: 'living', assetPath: '/assets/scene/ShipRoom/living.png' },
+      { label: 'Wrong', textureKey: 'livingFire', assetPath: '/assets/scene/ShipRoom/卧室着火遮罩.png' }
     ]
   },
   {
@@ -358,7 +359,8 @@ const ROOM_CONFIGS: RoomConfig[] = [
     defaultTextureKey: 'plant',
     maskTextureKey: 'plant',
     layerOptions: [
-      { label: 'Normal', textureKey: 'plant', assetPath: '/assets/scene/ShipRoom/plant.png' }
+      { label: 'Normal', textureKey: 'plant', assetPath: '/assets/scene/ShipRoom/plant.png' },
+      { label: 'Wrong', textureKey: 'plantFire', assetPath: '/assets/scene/ShipRoom/植物仓着火遮罩.png' }
     ]
   },
   {
@@ -904,6 +906,8 @@ class MainScene extends Phaser.Scene {
   private uiPanel?: Phaser.GameObjects.Container;
   private isUiPanelVisible = true;
   private driveOverlay?: Phaser.GameObjects.Image;
+  private livingOverlay?: Phaser.GameObjects.Image;
+  private plantOverlay?: Phaser.GameObjects.Image;
   private repoOverlay?: Phaser.GameObjects.Image;
   private outerWrongOverlay?: Phaser.GameObjects.Image;
   private isOuterWrong = false;
@@ -921,6 +925,12 @@ class MainScene extends Phaser.Scene {
   private driveStateButton?: Phaser.GameObjects.Rectangle;
   private driveSelectedText?: Phaser.GameObjects.Text;
   private currentDriveRoomOption = 'Normal';
+  private livingStateButton?: Phaser.GameObjects.Rectangle;
+  private livingSelectedText?: Phaser.GameObjects.Text;
+  private currentLivingRoomOption = 'Normal';
+  private plantStateButton?: Phaser.GameObjects.Rectangle;
+  private plantSelectedText?: Phaser.GameObjects.Text;
+  private currentPlantRoomOption = 'Normal';
   private repoStateButton?: Phaser.GameObjects.Rectangle;
   private repoSelectedText?: Phaser.GameObjects.Text;
   private currentRepoRoomOption = 'Full';
@@ -1156,12 +1166,12 @@ class MainScene extends Phaser.Scene {
       .setDisplaySize(SCENE_WIDTH * scale, SCENE_HEIGHT * scale)
       .setVisible(true);
 
-    this.add
+    this.livingOverlay = this.add
       .image(width / 2, height / 2, LIVING_ROOM_CONFIG.defaultTextureKey)
       .setDisplaySize(SCENE_WIDTH * scale, SCENE_HEIGHT * scale)
       .setVisible(true);
 
-    this.add
+    this.plantOverlay = this.add
       .image(width / 2, height / 2, PLANT_ROOM_CONFIG.defaultTextureKey)
       .setDisplaySize(SCENE_WIDTH * scale, SCENE_HEIGHT * scale)
       .setVisible(true);
@@ -1370,7 +1380,7 @@ class MainScene extends Phaser.Scene {
     const panel = this.add.container(16, 16).setScrollFactor(0);
     this.uiPanel = panel;
     const panelBackground = this.add
-      .rectangle(0, 0, 220, 604, 0x0f172a, 0.82)
+      .rectangle(0, 0, 220, 692, 0x0f172a, 0.82)
       .setOrigin(0);
     const playerGroupLabel = this.add.text(14, 16, 'Controls', {
       fontFamily: 'Arial, Helvetica, sans-serif',
@@ -1542,51 +1552,81 @@ class MainScene extends Phaser.Scene {
     });
     this.updateOuterWrongUi();
 
-    const repoLabel = this.add.text(14, 432, REPO_ROOM_CONFIG.label, {
+    const livingLabel = this.add.text(14, 432, LIVING_ROOM_CONFIG.label, {
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: '16px',
+      color: '#ffffff'
+    });
+    this.livingStateButton = this.add
+      .rectangle(PANEL_CONTROL_X, 427, PANEL_CONTROL_WIDTH, 32, 0x22c55e, 1)
+      .setOrigin(0)
+      .setInteractive({ useHandCursor: true });
+    this.livingSelectedText = this.add.text(104, 434, 'Normal', {
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: '15px',
+      color: '#ffffff'
+    });
+
+    const plantLabel = this.add.text(14, 476, PLANT_ROOM_CONFIG.label, {
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: '16px',
+      color: '#ffffff'
+    });
+    this.plantStateButton = this.add
+      .rectangle(PANEL_CONTROL_X, 471, PANEL_CONTROL_WIDTH, 32, 0x22c55e, 1)
+      .setOrigin(0)
+      .setInteractive({ useHandCursor: true });
+    this.plantSelectedText = this.add.text(104, 478, 'Normal', {
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: '15px',
+      color: '#ffffff'
+    });
+
+    const repoLabel = this.add.text(14, 520, REPO_ROOM_CONFIG.label, {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '16px',
       color: '#ffffff'
     });
     this.repoStateButton = this.add
-      .rectangle(PANEL_CONTROL_X, 427, PANEL_CONTROL_WIDTH, 32, 0x22c55e, 1)
+      .rectangle(PANEL_CONTROL_X, 515, PANEL_CONTROL_WIDTH, 32, 0x22c55e, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
-    this.repoSelectedText = this.add.text(126, 434, 'Full', {
+    this.repoSelectedText = this.add.text(126, 522, 'Full', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#ffffff'
     });
 
-    const powerCrystalLabel = this.add.text(14, 476, 'Crystal', {
+    const powerCrystalLabel = this.add.text(14, 564, 'Crystal', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '16px',
       color: '#ffffff'
     });
     const powerCrystalButton = this.add
-      .rectangle(PANEL_CONTROL_X, 471, PANEL_CONTROL_WIDTH, 32, 0x2563eb, 1)
+      .rectangle(PANEL_CONTROL_X, 559, PANEL_CONTROL_WIDTH, 32, 0x2563eb, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
-    const powerCrystalText = this.add.text(133, 478, 'Play', {
+    const powerCrystalText = this.add.text(133, 566, 'Play', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#ffffff'
     });
 
-    const utilityGroupLabel = this.add.text(14, 520, 'Utility', {
+    const utilityGroupLabel = this.add.text(14, 608, 'Utility', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '18px',
       color: '#93c5fd'
     });
-    const screenshotLabel = this.add.text(14, 560, 'Screenshot', {
+    const screenshotLabel = this.add.text(14, 648, 'Screenshot', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#ffffff'
     });
     const screenshotButton = this.add
-      .rectangle(PANEL_CONTROL_X, 555, PANEL_CONTROL_WIDTH, 32, 0x0ea5e9, 1)
+      .rectangle(PANEL_CONTROL_X, 643, PANEL_CONTROL_WIDTH, 32, 0x0ea5e9, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
-    const screenshotText = this.add.text(133, 562, 'Save', {
+    const screenshotText = this.add.text(133, 650, 'Save', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#ffffff'
@@ -1849,6 +1889,12 @@ class MainScene extends Phaser.Scene {
       outerLabel,
       this.outerRepairButton,
       this.outerRepairText,
+      livingLabel,
+      this.livingStateButton,
+      this.livingSelectedText,
+      plantLabel,
+      this.plantStateButton,
+      this.plantSelectedText,
       repoLabel,
       this.repoStateButton,
       this.repoSelectedText,
@@ -1863,6 +1909,14 @@ class MainScene extends Phaser.Scene {
 
     selectedBackground.on('pointerdown', () => {
       this.setDriveRoomOption(this.currentDriveRoomOption === 'Wrong' ? 'Normal' : 'Wrong');
+    });
+
+    this.livingStateButton.on('pointerdown', () => {
+      this.setLivingRoomOption(this.currentLivingRoomOption === 'Wrong' ? 'Normal' : 'Wrong');
+    });
+
+    this.plantStateButton.on('pointerdown', () => {
+      this.setPlantRoomOption(this.currentPlantRoomOption === 'Wrong' ? 'Normal' : 'Wrong');
     });
 
     this.repoStateButton.on('pointerdown', () => {
@@ -3595,6 +3649,53 @@ class MainScene extends Phaser.Scene {
     }
 
     this.driveOverlay.setTexture(option.textureKey).setVisible(true);
+  }
+
+  private setLivingRoomOption(label: string) {
+    this.setFireRoomOption(
+      LIVING_ROOM_CONFIG,
+      label,
+      this.livingOverlay,
+      this.livingSelectedText,
+      this.livingStateButton,
+      (optionLabel) => {
+        this.currentLivingRoomOption = optionLabel;
+      }
+    );
+  }
+
+  private setPlantRoomOption(label: string) {
+    this.setFireRoomOption(
+      PLANT_ROOM_CONFIG,
+      label,
+      this.plantOverlay,
+      this.plantSelectedText,
+      this.plantStateButton,
+      (optionLabel) => {
+        this.currentPlantRoomOption = optionLabel;
+      }
+    );
+  }
+
+  private setFireRoomOption(
+    roomConfig: RoomConfig,
+    label: string,
+    overlay: Phaser.GameObjects.Image | undefined,
+    selectedText: Phaser.GameObjects.Text | undefined,
+    stateButton: Phaser.GameObjects.Rectangle | undefined,
+    setCurrentOption: (label: string) => void
+  ) {
+    const option = roomConfig.layerOptions.find((roomOption) => roomOption.label === label);
+
+    if (!option || !option.textureKey || !overlay || !selectedText) {
+      return;
+    }
+
+    setCurrentOption(option.label);
+    selectedText.setText(option.label);
+    selectedText.setX(option.label === 'Wrong' ? 112 : 104);
+    stateButton?.setFillStyle(option.label === 'Wrong' ? 0xdc2626 : 0x22c55e, 1);
+    overlay.setTexture(option.textureKey).setVisible(true);
   }
 
   private setRepoRoomOption(label: string) {
