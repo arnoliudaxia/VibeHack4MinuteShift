@@ -25,6 +25,10 @@ const PLAYER_SWAP_IMPULSE_SPEED = 500;
 const PLAYER_SWAP_IMPULSE_DURATION = 1000;
 const PLAYER_OUTER_REPAIR_PROGRESS_PER_SECOND = 0.1;
 const PLAYER_ATTACK_DISTANCE = 130;
+const ROOM_RANDOM_FIRE_MIN_DELAY = 10000;
+const ROOM_RANDOM_FIRE_MAX_DELAY = 40000;
+
+type FireRoomId = 'drive' | 'living' | 'plant';
 
 const PLAYER_PREFAB_CHARACTER_SCALE = 2.0872;
 const PLAYER_PREFAB_PIXELS_PER_UNIT = 30;
@@ -1056,6 +1060,7 @@ class MainScene extends Phaser.Scene {
   private pixelAsteroidLaneWarningAsteroid?: AsteroidSprite;
   private gameStartTime = 0;
   private displayedGameSeconds = -1;
+  private randomRoomFireEvent?: Phaser.Time.TimerEvent;
 
   constructor() {
     super('MainScene');
@@ -2028,6 +2033,59 @@ class MainScene extends Phaser.Scene {
 
       this.updateGravityUi();
     });
+
+    this.scheduleNextRandomRoomFire();
+  }
+
+  private scheduleNextRandomRoomFire() {
+    this.randomRoomFireEvent?.remove(false);
+    this.randomRoomFireEvent = this.time.delayedCall(
+      Phaser.Math.Between(ROOM_RANDOM_FIRE_MIN_DELAY, ROOM_RANDOM_FIRE_MAX_DELAY),
+      () => {
+        this.igniteRandomRoom();
+        this.scheduleNextRandomRoomFire();
+      }
+    );
+  }
+
+  private igniteRandomRoom() {
+    const availableRooms = this.getNormalFireRooms();
+    const fallbackRooms: FireRoomId[] = ['drive', 'living', 'plant'];
+    const targetRoom = Phaser.Utils.Array.GetRandom(availableRooms.length > 0 ? availableRooms : fallbackRooms) as FireRoomId;
+
+    this.setFireRoomWrong(targetRoom);
+  }
+
+  private getNormalFireRooms(): FireRoomId[] {
+    const rooms: FireRoomId[] = [];
+
+    if (this.currentDriveRoomOption !== 'Wrong') {
+      rooms.push('drive');
+    }
+
+    if (this.currentLivingRoomOption !== 'Wrong') {
+      rooms.push('living');
+    }
+
+    if (this.currentPlantRoomOption !== 'Wrong') {
+      rooms.push('plant');
+    }
+
+    return rooms;
+  }
+
+  private setFireRoomWrong(roomId: FireRoomId) {
+    if (roomId === 'drive') {
+      this.setDriveRoomOption('Wrong');
+      return;
+    }
+
+    if (roomId === 'living') {
+      this.setLivingRoomOption('Wrong');
+      return;
+    }
+
+    this.setPlantRoomOption('Wrong');
   }
 
   private toggleUiPanelVisibility() {
