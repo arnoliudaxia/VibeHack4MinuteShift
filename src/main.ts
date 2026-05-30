@@ -225,6 +225,15 @@ const ROOM_CONFIGS: RoomConfig[] = [
     ]
   },
   {
+    id: 'leftUpRoom',
+    label: 'LeftUpRoom',
+    defaultTextureKey: 'leftUpRoom',
+    maskTextureKey: 'leftUpRoom',
+    layerOptions: [
+      { label: 'Normal', textureKey: 'leftUpRoom', assetPath: '/assets/scene/ShipRoom/LeftUpRoom.png' }
+    ]
+  },
+  {
     id: 'workshop',
     label: 'Workshop',
     defaultTextureKey: 'workshop',
@@ -283,6 +292,7 @@ const ROOM_CONFIGS: RoomConfig[] = [
 
 const DRIVE_ROOM_CONFIG = ROOM_CONFIGS.find((room) => room.id === 'drive') ?? ROOM_CONFIGS[0];
 const HEAL_ROOM_CONFIG = ROOM_CONFIGS.find((room) => room.id === 'heal') ?? ROOM_CONFIGS[0];
+const LEFT_UP_ROOM_CONFIG = ROOM_CONFIGS.find((room) => room.id === 'leftUpRoom') ?? ROOM_CONFIGS[0];
 const WORKSHOP_ROOM_CONFIG = ROOM_CONFIGS.find((room) => room.id === 'workshop') ?? ROOM_CONFIGS[0];
 const LIVING_ROOM_CONFIG = ROOM_CONFIGS.find((room) => room.id === 'living') ?? ROOM_CONFIGS[0];
 const PLANT_ROOM_CONFIG = ROOM_CONFIGS.find((room) => room.id === 'plant') ?? ROOM_CONFIGS[0];
@@ -913,6 +923,11 @@ class MainScene extends Phaser.Scene {
       .setVisible(true);
 
     this.add
+      .image(width / 2, height / 2, LEFT_UP_ROOM_CONFIG.defaultTextureKey)
+      .setDisplaySize(SCENE_WIDTH * scale, SCENE_HEIGHT * scale)
+      .setVisible(true);
+
+    this.add
       .image(width / 2, height / 2, WORKSHOP_ROOM_CONFIG.defaultTextureKey)
       .setDisplaySize(SCENE_WIDTH * scale, SCENE_HEIGHT * scale)
       .setVisible(true);
@@ -1024,7 +1039,7 @@ class MainScene extends Phaser.Scene {
     const panel = this.add.container(16, 16).setScrollFactor(0);
     this.uiPanel = panel;
     const panelBackground = this.add
-      .rectangle(0, 0, 220, 624, 0x0f172a, 0.82)
+      .rectangle(0, 0, 220, 704, 0x0f172a, 0.82)
       .setOrigin(0);
     const playerGroupLabel = this.add.text(14, 16, 'Player', {
       fontFamily: 'Arial, Helvetica, sans-serif',
@@ -1226,6 +1241,26 @@ class MainScene extends Phaser.Scene {
       color: '#ffffff'
     });
 
+    const utilityGroupLabel = this.add.text(14, 620, 'Utility', {
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: '18px',
+      color: '#93c5fd'
+    });
+    const screenshotLabel = this.add.text(14, 660, 'Screenshot', {
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: '15px',
+      color: '#ffffff'
+    });
+    const screenshotButton = this.add
+      .rectangle(PANEL_CONTROL_X, 655, PANEL_CONTROL_WIDTH, 32, 0x0ea5e9, 1)
+      .setOrigin(0)
+      .setInteractive({ useHandCursor: true });
+    const screenshotText = this.add.text(133, 662, 'Save', {
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: '15px',
+      color: '#ffffff'
+    });
+
     panel.add([
       panelBackground,
       playerGroupLabel,
@@ -1265,7 +1300,11 @@ class MainScene extends Phaser.Scene {
       this.repoSelectedText,
       powerCrystalLabel,
       powerCrystalButton,
-      powerCrystalText
+      powerCrystalText,
+      utilityGroupLabel,
+      screenshotLabel,
+      screenshotButton,
+      screenshotText
     ]);
 
     selectedBackground.on('pointerdown', () => {
@@ -1278,6 +1317,10 @@ class MainScene extends Phaser.Scene {
 
     powerCrystalButton.on('pointerdown', () => {
       this.playPowerCrystalAnimation();
+    });
+
+    screenshotButton.on('pointerdown', () => {
+      this.captureScreenshot();
     });
 
     animationButton.on('pointerdown', () => {
@@ -1381,6 +1424,18 @@ class MainScene extends Phaser.Scene {
 
     this.powerCrystalSprite.setTexture(POWER_CRYSTAL_FRAME_KEYS[0]);
     this.powerCrystalSprite.play(POWER_CRYSTAL_ANIMATION_KEY, true);
+  }
+
+  private captureScreenshot() {
+    window.requestAnimationFrame(() => {
+      const dataUrl = this.game.canvas.toDataURL('image/png');
+      const link = document.createElement('a');
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+
+      link.href = dataUrl;
+      link.download = `gamejam-screenshot-${timestamp}.png`;
+      link.click();
+    });
   }
 
   update(time: number, delta: number) {
@@ -1517,14 +1572,16 @@ class MainScene extends Phaser.Scene {
     });
 
     const handLeft = this.createPrefabNode(root, -0.0077263433, 0.023179028);
-    // this.addPrefabSprite(handLeft, 'playerPrefabShield', 0.29100013, 0.13100004, 0.52, 0.58); // TODO 右手暂时隐藏
-
+    
     const handRight = this.createPrefabNode(root, -0.0077263433, 0.023179028);
     const bow = this.createPrefabNode(handRight, -0.04399988, 0.08099997);
-
+    
     // this.addPrefabSprite(bow, 'playerPrefabBowLineDown', -0.16500005, 0.100000024, 0.36, 0.06);
     // this.addPrefabSprite(bow, 'playerPrefabBowLineUp', 0.13999996, 0.100000024, 0.37, 0.06);
-    // this.addPrefabSprite(bow, 'playerPrefabBow', 0, 0, 1.32, 0.73); // TODO 弓箭暂时隐藏
+
+
+    // this.addPrefabSprite(handLeft, 'playerPrefabShield', 0.29100013, 0.13100004, 0.52, 0.58); // TODO 右手暂时隐藏
+    this.addPrefabSprite(bow, 'playerPrefabBow', 0, 0, 1.32, 0.73); // TODO 弓箭暂时隐藏
     const arrow = this.createPrefabNode(bow, 0.005, -0.211, -90);
     const arrowSprite = this.addPrefabSprite(arrow, 'playerPrefabArrow', 0, 0, 0.88, 0.36, { alpha: 0 });
 
@@ -2621,6 +2678,9 @@ const config: Phaser.Types.Core.GameConfig = {
   width: SCENE_WIDTH,
   height: SCENE_HEIGHT,
   backgroundColor: '#111827',
+  render: {
+    preserveDrawingBuffer: true
+  },
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH
