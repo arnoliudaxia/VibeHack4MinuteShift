@@ -10,8 +10,6 @@ const PLAYER_WIDTH = 38;
 const PLAYER_HEIGHT = 72;
 const PLAYER_MAX_HEALTH = 100;
 const PLAYER_HEAL_PER_SECOND = 15;
-const PLAYER_HEALTH_BAR_WIDTH = 44;
-const PLAYER_HEALTH_BAR_HEIGHT = 7;
 const PLAYER_HEALTH_BAR_OFFSET_Y = -PLAYER_HEIGHT / 2 - 14;
 const PLAYER_SPEED = 260;
 const PLAYER_GRAVITY = 1100;
@@ -23,12 +21,16 @@ const PLAYER_PROGRESS_RADIUS = 14;
 const PLAYER_PROGRESS_LINE_WIDTH = 4;
 const PLAYER_REPAIR_PROGRESS_PER_SECOND = 0.2;
 const PLAYER_REPO_PROGRESS_PER_SECOND = 0.5;
+
 const PLAYER_PREFAB_CHARACTER_SCALE = 2.0872;
 const PLAYER_PREFAB_PIXELS_PER_UNIT = 30;
 const PLAYER_PREFAB_ROOT_OFFSET_Y = PLAYER_HEIGHT / 2 - 8;
 const PLAYER_PREFAB_SKIN_TINT = 0xfac9ac;
 const PLAYER_PREFAB_HAIR_TINT = 0x7de8a7;
 const COLLISION_ALPHA_THRESHOLD = 16;
+// 传送设置
+const PLAYER_OUTSIDE_SHIP_X = 900;
+const PLAYER_OUTSIDE_SHIP_Y = 100;
 
 // 音乐设置
 const BGM_VOLUME = 0.45;
@@ -39,6 +41,8 @@ const PANEL_SLIDER_WIDTH = 78;
 const SECOND_CLOCK_OFFSET_X = 174;
 const SECOND_CLOCK_OFFSET_Y = 40;
 const SECOND_CLOCK_RADIUS = 24;
+const PLAYER_HEALTH_BAR_WIDTH = 44;
+const PLAYER_HEALTH_BAR_HEIGHT = 7;
 
 // VFX
 const DRIVE_WARNING_SIGN_X = 1200;
@@ -131,6 +135,14 @@ type PlayerKeys = {
   H: Phaser.Input.Keyboard.Key;
 };
 
+type SecondPlayerKeys = {
+  UP: Phaser.Input.Keyboard.Key;
+  LEFT: Phaser.Input.Keyboard.Key;
+  DOWN: Phaser.Input.Keyboard.Key;
+  RIGHT: Phaser.Input.Keyboard.Key;
+  L: Phaser.Input.Keyboard.Key;
+};
+
 type VolumeSound = Phaser.Sound.BaseSound & {
   setVolume?: (value: number) => Phaser.Sound.BaseSound;
   volume?: number;
@@ -172,6 +184,15 @@ type PlayerHandToolAsset = {
   key: string | null;
   label: string;
   path?: string;
+};
+
+type PlayerPanelControls = {
+  infoText: Phaser.GameObjects.Text;
+  animationText: Phaser.GameObjects.Text;
+  progressFill: Phaser.GameObjects.Rectangle;
+  progressHandle: Phaser.GameObjects.Arc;
+  progressText: Phaser.GameObjects.Text;
+  handToolText: Phaser.GameObjects.Text;
 };
 
 type RoomLayerOption = {
@@ -816,6 +837,10 @@ class MainScene extends Phaser.Scene {
   private playerHealthBar?: Phaser.GameObjects.Graphics;
   private playerHealth = PLAYER_MAX_HEALTH;
   private playerProgressBar?: Phaser.GameObjects.Graphics;
+  private secondPlayer?: Phaser.GameObjects.Graphics;
+  private secondPlayerVisual?: Phaser.GameObjects.Container;
+  private secondPlayerKeys?: SecondPlayerKeys;
+  private secondPlayerProgressBar?: Phaser.GameObjects.Graphics;
   private progressSliderFill?: Phaser.GameObjects.Rectangle;
   private progressSliderHandle?: Phaser.GameObjects.Arc;
   private progressSliderText?: Phaser.GameObjects.Text;
@@ -823,11 +848,20 @@ class MainScene extends Phaser.Scene {
   private playerPrefabVisual?: Phaser.GameObjects.Container;
   private playerPrefabAnimationNodes?: PrefabAnimationNodes;
   private playerPrefabAnimationSprites?: PrefabAnimationSprites;
+  private secondPlayerPrefabAnimationNodes?: PrefabAnimationNodes;
+  private secondPlayerPrefabAnimationSprites?: PrefabAnimationSprites;
   private playerHandToolSprite?: PrefabAnimationSprite;
+  private secondPlayerHandToolSprite?: PrefabAnimationSprite;
   private currentHandToolIndex = 0;
   private handToolSelectedText?: Phaser.GameObjects.Text;
+  private teleportButton?: Phaser.GameObjects.Rectangle;
+  private teleportText?: Phaser.GameObjects.Text;
   private playerPrefabAnimationState: PlayerPrefabAnimationName = 'Idle';
   private playerPrefabAnimationTime = 0;
+  private secondPlayerAnimationState: PlayerPrefabAnimationName = 'Idle';
+  private secondPlayerPrefabAnimationTime = 0;
+  private secondPlayerProgress = 0;
+  private secondPlayerHandToolIndex = 0;
   private keys?: PlayerKeys;
   private uiPanel?: Phaser.GameObjects.Container;
   private isUiPanelVisible = true;
@@ -851,6 +885,10 @@ class MainScene extends Phaser.Scene {
   private isBgmMuted = true;
   private isGravityEnabled = true;
   private playerVelocityY = 0;
+  private isSecondPlayerGravityEnabled = false;
+  private secondPlayerVelocityY = 0;
+  private isPlayerInsideShip = true;
+  private isSecondPlayerInsideShip = false;
   private playerState: PlayerState = 'Normal';
   private readonly playerStateTransitions: Record<PlayerState, PlayerStateTransition> = {
     Normal: (context) => {
@@ -913,6 +951,9 @@ class MainScene extends Phaser.Scene {
   private collisionBodyDebug?: Phaser.GameObjects.Graphics;
   private collisionData?: Uint8Array;
   private ladderData?: Uint8Array;
+  private outsideCollisionData?: Uint8Array;
+  private outsideCollisionWidth = 0;
+  private outsideCollisionHeight = 0;
   private roomMasks = new Map<string, RoomMaskData>();
   private collisionWidth = 0;
   private collisionHeight = 0;
@@ -920,6 +961,10 @@ class MainScene extends Phaser.Scene {
   private gravityText?: Phaser.GameObjects.Text;
   private stateText?: Phaser.GameObjects.Text;
   private coordinateText?: Phaser.GameObjects.Text;
+  private playerInfoText?: Phaser.GameObjects.Text;
+  private secondPlayerInfoText?: Phaser.GameObjects.Text;
+  private playerPanelControls?: PlayerPanelControls;
+  private secondPlayerPanelControls?: PlayerPanelControls;
   private timerText?: Phaser.GameObjects.Text;
   private secondClock?: Phaser.GameObjects.Graphics;
   private asteroids: AsteroidSprite[] = [];
@@ -947,6 +992,7 @@ class MainScene extends Phaser.Scene {
     this.load.image('spaceShipFire', '/assets/VFX/fireV.png');
     this.load.image('background', '/assets/scene/spaceShip.png');
     this.load.image('collision', '/assets/scene/physic.png');
+    this.load.image('collisionOut', '/assets/scene/physicOut.png');
     this.load.image('outerWrong', '/assets/scene/ShipRoom/OuterWrong.png');
     this.load.image('alien', '/assets/scene/Alien/外星人.png');
     this.load.image('alienReticle', '/assets/scene/Alien/瞄准.png');
@@ -980,7 +1026,7 @@ class MainScene extends Phaser.Scene {
     this.load.image('playerPrefabHead', '/assets/player-prefab/head.png');
     this.load.image('playerPrefabHair', '/assets/player-prefab/hair.png');
     this.load.image('playerPrefabEye', '/assets/player-prefab/eye.png');
-    this.load.image('playerPrefabShield', '/assets/player-prefab/shield.png');
+    // this.load.image('playerPrefabShield', '/assets/player-prefab/shield.png');
     this.load.image('playerPrefabBowLineDown', '/assets/player-prefab/bow-line-down.png');
     this.load.image('playerPrefabBow', '/assets/player-prefab/bow.png');
     this.load.image('playerPrefabBowLineUp', '/assets/player-prefab/bow-line-up.png');
@@ -1126,6 +1172,17 @@ class MainScene extends Phaser.Scene {
       .strokeRoundedRect(-PLAYER_WIDTH / 2, -PLAYER_HEIGHT / 2, PLAYER_WIDTH, PLAYER_HEIGHT, PLAYER_WIDTH / 2)
       .setVisible(false);
     this.playerPrefabVisual = this.createPlayerPrefabVisual(this.player.x, this.player.y);
+    this.secondPlayer = this.add.graphics({ x: PLAYER_OUTSIDE_SHIP_X, y: PLAYER_OUTSIDE_SHIP_Y });
+    this.secondPlayer
+      .fillStyle(0xa78bfa, 1)
+      .fillRoundedRect(-PLAYER_WIDTH / 2, -PLAYER_HEIGHT / 2, PLAYER_WIDTH, PLAYER_HEIGHT, PLAYER_WIDTH / 2)
+      .lineStyle(3, 0xede9fe, 1)
+      .strokeRoundedRect(-PLAYER_WIDTH / 2, -PLAYER_HEIGHT / 2, PLAYER_WIDTH, PLAYER_HEIGHT, PLAYER_WIDTH / 2)
+      .setVisible(false);
+    this.secondPlayerVisual = this.createSecondPlayerPrefabVisual(this.secondPlayer.x, this.secondPlayer.y);
+    this.secondPlayerProgressBar = this.add.graphics();
+    this.secondPlayerProgressBar.setVisible(false);
+    this.updateSecondPlayerProgressBar();
     this.playerHealthBar = this.add.graphics();
     this.updatePlayerHealthBar();
     this.updatePlayerSpeedUi();
@@ -1136,6 +1193,13 @@ class MainScene extends Phaser.Scene {
     this.exposePlayerAnimationInterface();
 
     this.keys = this.input.keyboard?.addKeys('W,A,S,D,E,H') as PlayerKeys | undefined;
+    this.secondPlayerKeys = this.input.keyboard?.addKeys({
+      UP: Phaser.Input.Keyboard.KeyCodes.UP,
+      LEFT: Phaser.Input.Keyboard.KeyCodes.LEFT,
+      DOWN: Phaser.Input.Keyboard.KeyCodes.DOWN,
+      RIGHT: Phaser.Input.Keyboard.KeyCodes.RIGHT,
+      L: Phaser.Input.Keyboard.KeyCodes.L
+    }) as SecondPlayerKeys | undefined;
 
     this.add
       .rectangle(width - 16, 16, 126, 48, 0x000000, 1)
@@ -1156,9 +1220,9 @@ class MainScene extends Phaser.Scene {
 
     const controlsPanel = this.add.container(width - 16, height - 16).setScrollFactor(0);
     const controlsBackground = this.add
-      .rectangle(0, 0, 230, 132, 0x0f172a, 0.82)
+      .rectangle(0, 0, 268, 184, 0x0f172a, 0.82)
       .setOrigin(1, 1);
-    const controlsTitle = this.add.text(-214, -118, '操作说明', {
+    const controlsTitle = this.add.text(-252, -170, '操作说明', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '18px',
       color: '#93c5fd'
@@ -1182,17 +1246,42 @@ class MainScene extends Phaser.Scene {
       return keycap;
     };
 
-    const keyW = createKeycap('W', -184, -72);
-    const keyA = createKeycap('A', -146, -72);
-    const keyS = createKeycap('S', -108, -72);
-    const keyD = createKeycap('D', -70, -72);
-    const moveHelpText = this.add.text(-36, -80, '移动', {
+    const playerOneLabel = this.add.text(-252, -138, 'P1', {
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: '15px',
+      color: '#cbd5e1'
+    });
+    const keyW = createKeycap('W', -214, -130);
+    const keyA = createKeycap('A', -176, -130);
+    const keyS = createKeycap('S', -138, -130);
+    const keyD = createKeycap('D', -100, -130);
+    const moveHelpText = this.add.text(-66, -138, '移动', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '16px',
       color: '#ffffff'
     });
-    const keyE = createKeycap('E', -184, -30);
-    const interactHelpText = this.add.text(-146, -38, '互动', {
+    const keyE = createKeycap('E', -214, -88);
+    const interactHelpText = this.add.text(-176, -96, '互动', {
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: '16px',
+      color: '#ffffff'
+    });
+    const playerTwoLabel = this.add.text(-252, -54, 'P2', {
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: '15px',
+      color: '#cbd5e1'
+    });
+    const keyLeft = createKeycap('←', -214, -46);
+    const keyUp = createKeycap('↑', -176, -46);
+    const keyDown = createKeycap('↓', -138, -46);
+    const keyRight = createKeycap('→', -100, -46);
+    const secondMoveHelpText = this.add.text(-66, -54, '移动', {
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: '16px',
+      color: '#ffffff'
+    });
+    const keyL = createKeycap('L', -214, -14);
+    const secondInteractHelpText = this.add.text(-176, -22, '互动', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '16px',
       color: '#ffffff'
@@ -1201,50 +1290,59 @@ class MainScene extends Phaser.Scene {
     controlsPanel.add([
       controlsBackground,
       controlsTitle,
+      playerOneLabel,
       keyW,
       keyA,
       keyS,
       keyD,
       moveHelpText,
       keyE,
-      interactHelpText
+      interactHelpText,
+      playerTwoLabel,
+      keyLeft,
+      keyUp,
+      keyDown,
+      keyRight,
+      secondMoveHelpText,
+      keyL,
+      secondInteractHelpText
     ]);
 
     const panel = this.add.container(16, 16).setScrollFactor(0);
     this.uiPanel = panel;
     const panelBackground = this.add
-      .rectangle(0, 0, 220, 748, 0x0f172a, 0.82)
+      .rectangle(0, 0, 220, 540, 0x0f172a, 0.82)
       .setOrigin(0);
-    const playerGroupLabel = this.add.text(14, 16, 'Player', {
+    const playerGroupLabel = this.add.text(14, 16, 'Controls', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '18px',
       color: '#93c5fd'
     });
-    const soundLabel = this.add.text(14, 356, 'BGM', {
+    const soundLabel = this.add.text(14, 148, 'BGM', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '16px',
       color: '#ffffff'
     });
     const muteButton = this.add
-      .rectangle(PANEL_CONTROL_X, 351, PANEL_CONTROL_WIDTH, 28, 0x475569, 1)
+      .rectangle(PANEL_CONTROL_X, 143, PANEL_CONTROL_WIDTH, 28, 0x475569, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
-    const muteText = this.add.text(119, 357, 'Muted', {
+    const muteText = this.add.text(119, 149, 'Muted', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '14px',
       color: '#ffffff'
     });
 
-    const collisionLabel = this.add.text(14, 400, 'Collision', {
+    const collisionLabel = this.add.text(14, 192, 'Collision', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '16px',
       color: '#ffffff'
     });
     const collisionButton = this.add
-      .rectangle(PANEL_CONTROL_X, 395, PANEL_CONTROL_WIDTH, 28, 0x475569, 1)
+      .rectangle(PANEL_CONTROL_X, 187, PANEL_CONTROL_WIDTH, 28, 0x475569, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
-    const collisionText = this.add.text(127, 401, 'Hidden', {
+    const collisionText = this.add.text(127, 193, 'Hidden', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '14px',
       color: '#ffffff'
@@ -1294,16 +1392,16 @@ class MainScene extends Phaser.Scene {
       color: '#ffffff'
     });
 
-    const shipFireLabel = this.add.text(14, 444, 'Ship Fire', {
+    const shipFireLabel = this.add.text(14, 236, 'Ship Fire', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '16px',
       color: '#ffffff'
     });
     const shipFireButton = this.add
-      .rectangle(PANEL_CONTROL_X, 439, PANEL_CONTROL_WIDTH, 32, 0x475569, 1)
+      .rectangle(PANEL_CONTROL_X, 231, PANEL_CONTROL_WIDTH, 32, 0x475569, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
-    const shipFireText = this.add.text(127, 446, 'Hidden', {
+    const shipFireText = this.add.text(127, 238, 'Hidden', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#ffffff'
@@ -1333,24 +1431,24 @@ class MainScene extends Phaser.Scene {
     this.input.setDraggable(this.progressSliderHandle);
     this.updateProgressSlider(0);
 
-    const sceneGroupLabel = this.add.text(14, 318, 'Scene', {
+    const sceneGroupLabel = this.add.text(14, 110, 'Scene', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '18px',
       color: '#93c5fd'
     });
 
-    const label = this.add.text(14, 488, DRIVE_ROOM_CONFIG.label, {
+    const label = this.add.text(14, 280, DRIVE_ROOM_CONFIG.label, {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '16px',
       color: '#ffffff'
     });
 
     const selectedBackground = this.add
-      .rectangle(PANEL_CONTROL_X, 483, PANEL_CONTROL_WIDTH, 32, 0x22c55e, 1)
+      .rectangle(PANEL_CONTROL_X, 275, PANEL_CONTROL_WIDTH, 32, 0x22c55e, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
     this.driveStateButton = selectedBackground;
-    const selectedText = this.add.text(104, 490, 'Normal', {
+    const selectedText = this.add.text(104, 282, 'Normal', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#ffffff'
@@ -1369,67 +1467,67 @@ class MainScene extends Phaser.Scene {
     });
     this.updatePlayerCoordinateUi();
 
-    const outerLabel = this.add.text(14, 532, 'Outer', {
+    const outerLabel = this.add.text(14, 324, 'Outer', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '16px',
       color: '#ffffff'
     });
     this.outerRepairButton = this.add
-      .rectangle(PANEL_CONTROL_X, 527, PANEL_CONTROL_WIDTH, 32, 0x475569, 1)
+      .rectangle(PANEL_CONTROL_X, 319, PANEL_CONTROL_WIDTH, 32, 0x475569, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
-    this.outerRepairText = this.add.text(126, 534, 'Normal', {
+    this.outerRepairText = this.add.text(126, 326, 'Normal', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#ffffff'
     });
     this.updateOuterWrongUi();
 
-    const repoLabel = this.add.text(14, 576, REPO_ROOM_CONFIG.label, {
+    const repoLabel = this.add.text(14, 368, REPO_ROOM_CONFIG.label, {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '16px',
       color: '#ffffff'
     });
     this.repoStateButton = this.add
-      .rectangle(PANEL_CONTROL_X, 571, PANEL_CONTROL_WIDTH, 32, 0x22c55e, 1)
+      .rectangle(PANEL_CONTROL_X, 363, PANEL_CONTROL_WIDTH, 32, 0x22c55e, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
-    this.repoSelectedText = this.add.text(126, 578, 'Full', {
+    this.repoSelectedText = this.add.text(126, 370, 'Full', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#ffffff'
     });
 
-    const powerCrystalLabel = this.add.text(14, 620, 'Crystal', {
+    const powerCrystalLabel = this.add.text(14, 412, 'Crystal', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '16px',
       color: '#ffffff'
     });
     const powerCrystalButton = this.add
-      .rectangle(PANEL_CONTROL_X, 615, PANEL_CONTROL_WIDTH, 32, 0x2563eb, 1)
+      .rectangle(PANEL_CONTROL_X, 407, PANEL_CONTROL_WIDTH, 32, 0x2563eb, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
-    const powerCrystalText = this.add.text(133, 622, 'Play', {
+    const powerCrystalText = this.add.text(133, 414, 'Play', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#ffffff'
     });
 
-    const utilityGroupLabel = this.add.text(14, 664, 'Utility', {
+    const utilityGroupLabel = this.add.text(14, 456, 'Utility', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '18px',
       color: '#93c5fd'
     });
-    const screenshotLabel = this.add.text(14, 704, 'Screenshot', {
+    const screenshotLabel = this.add.text(14, 496, 'Screenshot', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#ffffff'
     });
     const screenshotButton = this.add
-      .rectangle(PANEL_CONTROL_X, 699, PANEL_CONTROL_WIDTH, 32, 0x0ea5e9, 1)
+      .rectangle(PANEL_CONTROL_X, 491, PANEL_CONTROL_WIDTH, 32, 0x0ea5e9, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
-    const screenshotText = this.add.text(133, 706, 'Save', {
+    const screenshotText = this.add.text(133, 498, 'Save', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#ffffff'
@@ -1448,6 +1546,192 @@ class MainScene extends Phaser.Scene {
       fontSize: '15px',
       color: '#ffffff'
     });
+
+    const teleportLabel = this.add.text(14, 54, 'Teleport', {
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: '15px',
+      color: '#ffffff'
+    });
+    this.teleportButton = this.add
+      .rectangle(PANEL_CONTROL_X, 49, PANEL_CONTROL_WIDTH, 32, 0x0ea5e9, 1)
+      .setOrigin(0)
+      .setInteractive({ useHandCursor: true });
+    this.teleportText = this.add.text(132, 56, 'Swap', {
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: '15px',
+      color: '#ffffff'
+    });
+
+    const createPlayerInfoPanel = (
+      x: number,
+      title: string,
+      titleColor: string,
+      onAnimation: () => void,
+      onProgress: (progress: number) => void,
+      onHandTool: () => void
+    ): PlayerPanelControls => {
+      const playerInfoPanel = this.add.container(x, 16).setScrollFactor(0);
+      const playerInfoBackground = this.add
+        .rectangle(0, 0, 220, 304, 0x0f172a, 0.82)
+        .setOrigin(0);
+      const playerInfoTitle = this.add.text(14, 16, title, {
+        fontFamily: 'Arial, Helvetica, sans-serif',
+        fontSize: '18px',
+        color: titleColor
+      });
+      const playerInfoText = this.add.text(14, 48, '', {
+        fontFamily: 'Arial, Helvetica, sans-serif',
+        fontSize: '14px',
+        color: '#ffffff',
+        lineSpacing: 4
+      });
+      const panelAnimationLabel = this.add.text(14, 146, 'Animation', {
+        fontFamily: 'Arial, Helvetica, sans-serif',
+        fontSize: '15px',
+        color: '#ffffff'
+      });
+      const panelAnimationButton = this.add
+        .rectangle(PANEL_CONTROL_X, 141, PANEL_CONTROL_WIDTH, 32, 0x7c3aed, 1)
+        .setOrigin(0)
+        .setInteractive({ useHandCursor: true });
+      const panelAnimationText = this.add.text(132, 148, 'Idle', {
+        fontFamily: 'Arial, Helvetica, sans-serif',
+        fontSize: '15px',
+        color: '#ffffff'
+      });
+      const panelProgressLabel = this.add.text(14, 190, 'Progress', {
+        fontFamily: 'Arial, Helvetica, sans-serif',
+        fontSize: '15px',
+        color: '#ffffff'
+      });
+      const panelProgressTrack = this.add
+        .rectangle(PANEL_CONTROL_X, 201, PANEL_SLIDER_WIDTH, 6, 0x334155, 1)
+        .setOrigin(0, 0.5)
+        .setInteractive(new Phaser.Geom.Rectangle(0, 0, PANEL_SLIDER_WIDTH, 16), Phaser.Geom.Rectangle.Contains);
+      const panelProgressFill = this.add
+        .rectangle(PANEL_CONTROL_X, 201, 0, 6, 0x22c55e, 1)
+        .setOrigin(0, 0.5);
+      const panelProgressHandle = this.add
+        .circle(PANEL_CONTROL_X, 201, 8, 0xffffff, 1)
+        .setStrokeStyle(2, 0x22c55e)
+        .setInteractive(new Phaser.Geom.Circle(8, 8, 10), Phaser.Geom.Circle.Contains);
+      const panelProgressText = this.add.text(178, 192, '0%', {
+        fontFamily: 'Arial, Helvetica, sans-serif',
+        fontSize: '14px',
+        color: '#ffffff'
+      });
+      const panelHandToolLabel = this.add.text(14, 238, 'Hand Tool', {
+        fontFamily: 'Arial, Helvetica, sans-serif',
+        fontSize: '15px',
+        color: '#ffffff'
+      });
+      const panelHandToolButton = this.add
+        .rectangle(PANEL_CONTROL_X, 233, PANEL_CONTROL_WIDTH, 32, 0x7c3aed, 1)
+        .setOrigin(0)
+        .setInteractive({ useHandCursor: true });
+      const panelHandToolText = this.add.text(132, 240, 'None', {
+        fontFamily: 'Arial, Helvetica, sans-serif',
+        fontSize: '15px',
+        color: '#ffffff'
+      });
+
+      const setPanelProgressFromPointer = (pointer: Phaser.Input.Pointer) => {
+        const progress = Phaser.Math.Clamp((pointer.x - (playerInfoPanel.x + PANEL_CONTROL_X)) / PANEL_SLIDER_WIDTH, 0, 1);
+
+        onProgress(progress);
+      };
+
+      panelAnimationButton.on('pointerdown', onAnimation);
+      panelProgressTrack.on('pointerdown', setPanelProgressFromPointer);
+      panelProgressHandle.on('pointerdown', setPanelProgressFromPointer);
+      panelProgressHandle.on('drag', setPanelProgressFromPointer);
+      this.input.setDraggable(panelProgressHandle);
+      panelHandToolButton.on('pointerdown', onHandTool);
+
+      playerInfoPanel.add([
+        playerInfoBackground,
+        playerInfoTitle,
+        playerInfoText,
+        panelAnimationLabel,
+        panelAnimationButton,
+        panelAnimationText,
+        panelProgressLabel,
+        panelProgressTrack,
+        panelProgressFill,
+        panelProgressHandle,
+        panelProgressText,
+        panelHandToolLabel,
+        panelHandToolButton,
+        panelHandToolText
+      ]);
+
+      return {
+        infoText: playerInfoText,
+        animationText: panelAnimationText,
+        progressFill: panelProgressFill,
+        progressHandle: panelProgressHandle,
+        progressText: panelProgressText,
+        handToolText: panelHandToolText
+      };
+    };
+    this.playerPanelControls = createPlayerInfoPanel(
+      252,
+      'Player1',
+      '#93c5fd',
+      () => this.cyclePlayerPrefabAnimation(),
+      (progress) => this.setPlayerProgress(progress),
+      () => this.cyclePlayerHandTool()
+    );
+    this.secondPlayerPanelControls = createPlayerInfoPanel(
+      488,
+      'Player2',
+      '#c4b5fd',
+      () => this.cycleSecondPlayerAnimation(),
+      (progress) => this.setSecondPlayerProgress(progress),
+      () => this.cycleSecondPlayerHandTool()
+    );
+    this.playerInfoText = this.playerPanelControls.infoText;
+    this.secondPlayerInfoText = this.secondPlayerPanelControls.infoText;
+    this.updatePlayerInfoUi();
+    this.updateSecondPlayerInfoUi();
+
+    const playerTwoPanelLabel = this.add.text(14, 362, 'Player2', {
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: '18px',
+      color: '#c4b5fd'
+    }).setVisible(false);
+    const legacySecondPlayerInfoText = this.add.text(14, 394, '', {
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: '14px',
+      color: '#ffffff',
+      lineSpacing: 4
+    }).setVisible(false);
+
+    [
+      gravityLabel,
+      gravityButton,
+      gravityText,
+      stateLabel,
+      this.stateText,
+      animationLabel,
+      animationButton,
+      animationText,
+      progressLabel,
+      progressSliderTrack,
+      this.progressSliderFill,
+      this.progressSliderHandle,
+      this.progressSliderText,
+      handToolLabel,
+      handToolButton,
+      this.handToolSelectedText,
+      coordinateLabel,
+      this.coordinateText
+    ].forEach((gameObject) => gameObject.setVisible(false));
+    gravityButton.disableInteractive();
+    animationButton.disableInteractive();
+    progressSliderTrack.disableInteractive();
+    this.progressSliderHandle.disableInteractive();
+    handToolButton.disableInteractive();
 
     panel.add([
       panelBackground,
@@ -1477,6 +1761,11 @@ class MainScene extends Phaser.Scene {
       handToolLabel,
       handToolButton,
       this.handToolSelectedText,
+      teleportLabel,
+      this.teleportButton,
+      this.teleportText,
+      playerTwoPanelLabel,
+      legacySecondPlayerInfoText,
       sceneGroupLabel,
       label,
       selectedBackground,
@@ -1516,6 +1805,10 @@ class MainScene extends Phaser.Scene {
 
     handToolButton.on('pointerdown', () => {
       this.cyclePlayerHandTool();
+    });
+
+    this.teleportButton.on('pointerdown', () => {
+      this.swapPlayerPositions();
     });
 
     animationButton.on('pointerdown', () => {
@@ -1637,6 +1930,47 @@ class MainScene extends Phaser.Scene {
     this.setPlayerHandTool((this.currentHandToolIndex + 1) % PLAYER_HAND_TOOL_ASSETS.length);
   }
 
+  private cyclePlayerPrefabAnimation() {
+    const currentIndex = PLAYER_PREFAB_ANIMATION_NAMES.indexOf(this.playerPrefabAnimationState);
+    const nextAnimation = PLAYER_PREFAB_ANIMATION_NAMES[(currentIndex + 1) % PLAYER_PREFAB_ANIMATION_NAMES.length];
+
+    this.playPlayerPrefabAnimation(nextAnimation);
+  }
+
+  private cycleSecondPlayerAnimation() {
+    const currentIndex = PLAYER_PREFAB_ANIMATION_NAMES.indexOf(this.secondPlayerAnimationState);
+    const nextAnimation = PLAYER_PREFAB_ANIMATION_NAMES[(currentIndex + 1) % PLAYER_PREFAB_ANIMATION_NAMES.length];
+
+    this.playSecondPlayerPrefabAnimation(nextAnimation);
+  }
+
+  private setSecondPlayerProgress(progress: number) {
+    this.secondPlayerProgress = Phaser.Math.Clamp(progress, 0, 1);
+    this.updateSecondPlayerProgressBar();
+    this.updateSecondPlayerInfoUi();
+  }
+
+  private cycleSecondPlayerHandTool() {
+    this.setSecondPlayerHandTool(this.secondPlayerHandToolIndex + 1);
+  }
+
+  private setSecondPlayerHandTool(index: number) {
+    if (!this.secondPlayerHandToolSprite) {
+      return;
+    }
+
+    const nextIndex = Phaser.Math.Wrap(index, 0, PLAYER_HAND_TOOL_ASSETS.length);
+    const asset = PLAYER_HAND_TOOL_ASSETS[nextIndex];
+
+    this.secondPlayerHandToolIndex = nextIndex;
+    if (asset.key) {
+      this.secondPlayerHandToolSprite.setTexture(asset.key).setDisplaySize(1.32, 0.73).setVisible(true);
+    } else {
+      this.secondPlayerHandToolSprite.setVisible(false);
+    }
+    this.updateSecondPlayerInfoUi();
+  }
+
   private setPlayerHandTool(index: number) {
     if (!this.playerHandToolSprite) {
       return;
@@ -1653,6 +1987,7 @@ class MainScene extends Phaser.Scene {
     }
     this.handToolSelectedText?.setText(asset.label);
     this.handToolSelectedText?.setX(asset.label.length > 6 ? 103 : 132);
+    this.updatePlayerInfoUi();
   }
 
   private setPlayerHandToolByLabel(label: string) {
@@ -1663,6 +1998,140 @@ class MainScene extends Phaser.Scene {
     }
 
     this.setPlayerHandTool(index);
+  }
+
+  private swapPlayerPositions() {
+    if (!this.player || !this.secondPlayer) {
+      return;
+    }
+
+    const playerX = this.player.x;
+    const playerY = this.player.y;
+    const wasPlayerGravityEnabled = this.isGravityEnabled;
+    const wasPlayerInsideShip = this.isPlayerInsideShip;
+
+    this.player.setPosition(this.secondPlayer.x, this.secondPlayer.y);
+    this.secondPlayer.setPosition(playerX, playerY);
+    this.isGravityEnabled = this.isSecondPlayerGravityEnabled;
+    this.isSecondPlayerGravityEnabled = wasPlayerGravityEnabled;
+    this.isPlayerInsideShip = this.isSecondPlayerInsideShip;
+    this.isSecondPlayerInsideShip = wasPlayerInsideShip;
+    this.playerVelocityY = 0;
+    this.secondPlayerVelocityY = 0;
+    this.updateGravityUi();
+    this.syncPlayerPrefabVisual();
+    this.syncSecondPlayerPrefabVisual();
+    this.updatePlayerHealthBar();
+    this.updatePlayerProgressBar();
+    this.updatePlayerCoordinateUi();
+    this.updatePlayerInfoUi();
+    this.updateSecondPlayerInfoUi();
+    this.updateCollisionBodyDebug();
+  }
+
+  private updateSecondPlayerInfoUi() {
+    if (!this.secondPlayer || !this.secondPlayerInfoText) {
+      return;
+    }
+
+    const area = this.isSecondPlayerInsideShip ? 'Inside' : 'Outside';
+    const gravity = this.isSecondPlayerGravityEnabled ? 'On' : 'Off';
+    const handTool = PLAYER_HAND_TOOL_ASSETS[this.secondPlayerHandToolIndex].label;
+
+    this.secondPlayerInfoText.setText(
+      `Position: X ${Math.round(this.secondPlayer.x)} Y ${Math.round(this.secondPlayer.y)}\nArea: ${area}\nGravity: ${gravity}\nState: Independent`
+    );
+    this.updatePlayerPanelControls(
+      this.secondPlayerPanelControls,
+      this.secondPlayerAnimationState,
+      this.secondPlayerProgress,
+      handTool
+    );
+  }
+
+  private updateSecondPlayer(delta: number) {
+    if (!this.secondPlayer || !this.secondPlayerKeys) {
+      return;
+    }
+
+    if (Phaser.Input.Keyboard.JustDown(this.secondPlayerKeys.L)) {
+      this.onSecondPlayerInteract();
+    }
+
+    const direction = new Phaser.Math.Vector2(0, 0);
+
+    if (this.secondPlayerKeys.LEFT.isDown) {
+      direction.x -= 1;
+    }
+
+    if (this.secondPlayerKeys.RIGHT.isDown) {
+      direction.x += 1;
+    }
+
+    if (direction.x !== 0) {
+      this.setSecondPlayerPrefabFacing(direction.x < 0 ? -1 : 1);
+    }
+
+    if (this.secondPlayerKeys.UP.isDown) {
+      direction.y -= 1;
+    }
+
+    if (this.secondPlayerKeys.DOWN.isDown) {
+      direction.y += 1;
+    }
+
+    if (direction.lengthSq() > 0) {
+      direction.normalize().scale(PLAYER_SPEED * (delta / 1000));
+    }
+
+    if (this.isSecondPlayerGravityEnabled) {
+      this.secondPlayerVelocityY = Math.min(
+        this.secondPlayerVelocityY + PLAYER_GRAVITY * (delta / 1000),
+        PLAYER_MAX_FALL_SPEED
+      );
+      direction.y += this.secondPlayerVelocityY * (delta / 1000);
+    } else {
+      this.secondPlayerVelocityY = 0;
+    }
+    this.updateSecondPlayerProgressBar();
+
+    if (direction.x === 0 && direction.y === 0) {
+      this.syncSecondPlayerPrefabVisual();
+      this.updateSecondPlayerInfoUi();
+      return;
+    }
+
+    const nextX = Phaser.Math.Clamp(
+      this.secondPlayer.x + direction.x,
+      PLAYER_WIDTH / 2,
+      this.scale.width - PLAYER_WIDTH / 2
+    );
+
+    if (!this.collidesWithMap(nextX, this.secondPlayer.y, this.isSecondPlayerInsideShip)) {
+      this.secondPlayer.x = nextX;
+    }
+
+    const nextY = Phaser.Math.Clamp(
+      this.secondPlayer.y + direction.y,
+      PLAYER_HEIGHT / 2,
+      this.scale.height - PLAYER_HEIGHT / 2
+    );
+
+    if (!this.collidesWithMap(this.secondPlayer.x, nextY, this.isSecondPlayerInsideShip)) {
+      this.secondPlayer.y = nextY;
+    } else if (this.isSecondPlayerGravityEnabled && direction.y > 0) {
+      this.secondPlayerVelocityY = 0;
+    }
+
+    if (this.secondPlayer.y === this.scale.height - PLAYER_HEIGHT / 2) {
+      this.secondPlayerVelocityY = 0;
+    }
+    this.syncSecondPlayerPrefabVisual();
+    this.updateSecondPlayerInfoUi();
+    this.updateCollisionBodyDebug();
+  }
+
+  private onSecondPlayerInteract() {
   }
 
   update(time: number, delta: number) {
@@ -1681,10 +2150,12 @@ class MainScene extends Phaser.Scene {
 
     this.updateGameTimer(time);
     this.updatePlayerPrefabAnimation(delta);
+    this.updateSecondPlayerPrefabAnimation(delta);
     this.updatePlayerState(this.keys.W.isDown || this.keys.S.isDown);
     this.updateRepairProgress(delta);
     this.updateRepoProgress(delta);
     this.updateHealing(delta);
+    this.updateSecondPlayer(delta);
 
     const direction = new Phaser.Math.Vector2(0, 0);
     const healthSpeedMultiplier = this.getPlayerHealthSpeedMultiplier();
@@ -1738,7 +2209,7 @@ class MainScene extends Phaser.Scene {
       this.scale.width - PLAYER_WIDTH / 2
     );
 
-    if (!this.isWhiteCollisionEnabled || !this.collidesWithMap(nextX, this.player.y)) {
+    if (!this.isWhiteCollisionEnabled || !this.collidesWithMap(nextX, this.player.y, this.isPlayerInsideShip)) {
       this.player.x = nextX;
     } else if (direction.x !== 0) {
       const steppedY = this.tryStepUp(nextX, this.player.y);
@@ -1756,7 +2227,7 @@ class MainScene extends Phaser.Scene {
       this.scale.height - PLAYER_HEIGHT / 2
     );
 
-    if (!this.isWhiteCollisionEnabled || !this.collidesWithMap(this.player.x, nextY)) {
+    if (!this.isWhiteCollisionEnabled || !this.collidesWithMap(this.player.x, nextY, this.isPlayerInsideShip)) {
       this.player.y = nextY;
     } else if (this.isGravityEnabled && direction.y > 0) {
       this.playerVelocityY = 0;
@@ -1833,6 +2304,64 @@ class MainScene extends Phaser.Scene {
       defeatEyeRight
     };
     this.playPlayerPrefabAnimation('Idle');
+
+    return visual;
+  }
+
+  private createSecondPlayerPrefabVisual(x: number, y: number) {
+    const visual = this.add.container(x, y);
+    const root = this.createPrefabNode(visual, 0, 0);
+
+    root.setPosition(0, PLAYER_PREFAB_ROOT_OFFSET_Y);
+    root.setScale(PLAYER_PREFAB_PIXELS_PER_UNIT * PLAYER_PREFAB_CHARACTER_SCALE);
+
+    const body = this.createPrefabNode(root, 0.006000102, 0.19145268, -1.9272974, 1, 1.0584189);
+    this.addPrefabSprite(body, 'playerPrefabBody', 0, 0, 0.41, 0.45, { tint: 0xd8b4fe });
+    this.addPrefabSprite(body, 'playerPrefabChest', 0, 0, 0.78, 0.7);
+
+    const head = this.createPrefabNode(body, -0.039657928, 0.3265895, -0.0395905);
+    this.addPrefabSprite(head, 'playerPrefabHead', 0, 0, 0.65, 0.5, { tint: 0xd8b4fe });
+    const normalEye = this.addPrefabSprite(head, 'playerPrefabEye', 0.13499999, -0.054999948, 0.55, 0.32);
+    this.addPrefabSprite(head, 'playerPrefabHair', 0.025000036, 0.024999976, 0.98, 1);
+
+    const animatedEye = this.createPrefabNode(head, 0.13399993, -0.058999896);
+    const stunEyeLeft = this.createPrefabNode(animatedEye, -0.082, 0.010999978);
+    const stunEyeRight = this.createPrefabNode(animatedEye, 0.09200001, 0);
+    const stunEyeLeftSprite = this.addPrefabSprite(stunEyeLeft, 'playerPrefabEyeStun', 0, 0, 0.24, 0.22, { alpha: 0 });
+    const stunEyeRightSprite = this.addPrefabSprite(stunEyeRight, 'playerPrefabEyeStun', 0, 0, 0.24, 0.22, { alpha: 0 });
+    const defeatEyeLeft = this.addPrefabSprite(animatedEye, 'playerPrefabEyeDefeat', -0.065, 0.012, 0.19, 0.15, {
+      alpha: 0
+    });
+    const defeatEyeRight = this.addPrefabSprite(animatedEye, 'playerPrefabEyeDefeat', 0.079, 0.006, 0.19, 0.15, {
+      alpha: 0
+    });
+
+    const handLeft = this.createPrefabNode(root, -0.0077263433, 0.023179028);
+    const handRight = this.createPrefabNode(root, -0.0077263433, 0.023179028);
+    const bow = this.createPrefabNode(handRight, -0.04399988, 0.08099997);
+
+    this.secondPlayerHandToolSprite = this.addPrefabSprite(
+      bow,
+      PLAYER_HAND_TOOL_ASSETS[1].key!,
+      0,
+      0,
+      1.32,
+      0.73
+    );
+    this.setSecondPlayerHandTool(this.secondPlayerHandToolIndex);
+    const arrow = this.createPrefabNode(bow, 0.005, -0.211, -90);
+    const arrowSprite = this.addPrefabSprite(arrow, 'playerPrefabArrow', 0, 0, 0.88, 0.36, { alpha: 0 });
+
+    this.secondPlayerPrefabAnimationNodes = { body, head, handLeft, handRight, bow, stunEyeLeft, stunEyeRight };
+    this.secondPlayerPrefabAnimationSprites = {
+      normalEye,
+      arrow: arrowSprite,
+      stunEyeLeft: stunEyeLeftSprite,
+      stunEyeRight: stunEyeRightSprite,
+      defeatEyeLeft,
+      defeatEyeRight
+    };
+    this.playSecondPlayerPrefabAnimation('Idle');
 
     return visual;
   }
@@ -1972,6 +2501,15 @@ class MainScene extends Phaser.Scene {
         this.alienSprites.splice(index, 1);
       }
     }
+
+  }
+
+  private syncSecondPlayerPrefabVisual() {
+    if (!this.secondPlayer || !this.secondPlayerVisual) {
+      return;
+    }
+
+    this.secondPlayerVisual.setPosition(this.secondPlayer.x, this.secondPlayer.y);
   }
 
   private updateAsteroids(delta: number) {
@@ -2169,6 +2707,17 @@ class MainScene extends Phaser.Scene {
         PLAYER_HEIGHT
       );
 
+    if (this.secondPlayer) {
+      this.collisionBodyDebug
+        .lineStyle(2, 0xc084fc, 1)
+        .strokeRect(
+          this.secondPlayer.x - PLAYER_WIDTH / 2,
+          this.secondPlayer.y - PLAYER_HEIGHT / 2,
+          PLAYER_WIDTH,
+          PLAYER_HEIGHT
+        );
+    }
+
     this.asteroids.forEach((asteroid) => {
       if (!asteroid.collisionKind) {
         return;
@@ -2274,12 +2823,87 @@ class MainScene extends Phaser.Scene {
       .strokeRoundedRect(x, y, PLAYER_HEALTH_BAR_WIDTH, PLAYER_HEALTH_BAR_HEIGHT, 2);
   }
 
+  private updateSecondPlayerProgressBar() {
+    if (!this.secondPlayer || !this.secondPlayerProgressBar) {
+      return;
+    }
+
+    if (this.secondPlayerProgress <= 0) {
+      this.secondPlayerProgressBar.clear().setVisible(false);
+      return;
+    }
+
+    this.secondPlayerProgressBar
+      .setVisible(true)
+      .setPosition(this.secondPlayer.x + PLAYER_PROGRESS_OFFSET_X, this.secondPlayer.y + PLAYER_PROGRESS_OFFSET_Y)
+      .clear()
+      .fillStyle(0x000000, 0.75)
+      .fillCircle(0, 0, PLAYER_PROGRESS_RADIUS + PLAYER_PROGRESS_LINE_WIDTH)
+      .lineStyle(PLAYER_PROGRESS_LINE_WIDTH, 0x475569, 1)
+      .strokeCircle(0, 0, PLAYER_PROGRESS_RADIUS)
+      .lineStyle(PLAYER_PROGRESS_LINE_WIDTH, 0xa78bfa, 1)
+      .beginPath()
+      .arc(
+        0,
+        0,
+        PLAYER_PROGRESS_RADIUS,
+        -Math.PI / 2,
+        -Math.PI / 2 + Math.PI * 2 * this.secondPlayerProgress,
+        false
+      )
+      .strokePath();
+  }
+
   private updatePlayerCoordinateUi() {
     if (!this.player || !this.coordinateText) {
       return;
     }
 
-    this.coordinateText.setText(`X: ${Math.round(this.player.x)} Y: ${Math.round(this.player.y)}`);
+    this.coordinateText.setText(
+      `X: ${Math.round(this.player.x)} Y: ${Math.round(this.player.y)} ${this.isPlayerInsideShip ? 'In' : 'Out'}`
+    );
+    this.updatePlayerInfoUi();
+  }
+
+  private updatePlayerInfoUi() {
+    if (!this.player || !this.playerInfoText) {
+      return;
+    }
+
+    const area = this.isPlayerInsideShip ? 'Inside' : 'Outside';
+    const gravity = this.isGravityEnabled ? 'On' : 'Off';
+    const handTool = PLAYER_HAND_TOOL_ASSETS[this.currentHandToolIndex].label;
+
+    this.playerInfoText.setText(
+      `Position: X ${Math.round(this.player.x)} Y ${Math.round(this.player.y)}\nArea: ${area}\nGravity: ${gravity}\nState: ${this.playerState}`
+    );
+    this.updatePlayerPanelControls(
+      this.playerPanelControls,
+      this.playerPrefabAnimationState,
+      this.playerProgress,
+      handTool
+    );
+  }
+
+  private updatePlayerPanelControls(
+    controls: PlayerPanelControls | undefined,
+    animation: PlayerPrefabAnimationName,
+    progress: number,
+    handTool: string
+  ) {
+    if (!controls) {
+      return;
+    }
+
+    const clampedProgress = Phaser.Math.Clamp(progress, 0, 1);
+
+    controls.animationText.setText(animation);
+    controls.animationText.setX(animation.length > 5 ? 116 : 132);
+    controls.progressFill.setDisplaySize(PANEL_SLIDER_WIDTH * clampedProgress, 6);
+    controls.progressHandle.setX(PANEL_CONTROL_X + PANEL_SLIDER_WIDTH * clampedProgress);
+    controls.progressText.setText(`${Math.round(clampedProgress * 100)}%`);
+    controls.handToolText.setText(handTool);
+    controls.handToolText.setX(handTool.length > 6 ? 103 : 132);
   }
 
   private setPlayerHealth(health: number) {
@@ -2348,6 +2972,7 @@ class MainScene extends Phaser.Scene {
   private setPlayerProgress(progress: number) {
     this.playerProgress = Phaser.Math.Clamp(progress, 0, 1);
     this.updatePlayerProgressBar();
+    this.updatePlayerInfoUi();
   }
 
   private updateRepairProgress(delta: number) {
@@ -2514,6 +3139,14 @@ class MainScene extends Phaser.Scene {
     this.playerPrefabVisual.setScale(facingX, 1);
   }
 
+  private setSecondPlayerPrefabFacing(facingX: -1 | 1) {
+    if (!this.secondPlayerVisual || this.secondPlayerVisual.scaleX === facingX) {
+      return;
+    }
+
+    this.secondPlayerVisual.setScale(facingX, 1);
+  }
+
   public playPlayerPrefabAnimation(animationName: PlayerPrefabAnimationName, restart = true) {
     if (!PLAYER_PREFAB_ANIMATIONS[animationName]) {
       return false;
@@ -2525,6 +3158,23 @@ class MainScene extends Phaser.Scene {
     }
 
     this.updatePlayerPrefabAnimation(0);
+    this.updatePlayerInfoUi();
+
+    return true;
+  }
+
+  private playSecondPlayerPrefabAnimation(animationName: PlayerPrefabAnimationName, restart = true) {
+    if (!PLAYER_PREFAB_ANIMATIONS[animationName]) {
+      return false;
+    }
+
+    if (this.secondPlayerAnimationState !== animationName || restart) {
+      this.secondPlayerAnimationState = animationName;
+      this.secondPlayerPrefabAnimationTime = 0;
+    }
+
+    this.updateSecondPlayerPrefabAnimation(0);
+    this.updateSecondPlayerInfoUi();
 
     return true;
   }
@@ -2619,6 +3269,24 @@ class MainScene extends Phaser.Scene {
     this.applyPlayerPrefabAnimationFrame(clip, this.playerPrefabAnimationTime);
   }
 
+  private updateSecondPlayerPrefabAnimation(delta: number) {
+    const clip = PLAYER_PREFAB_ANIMATIONS[this.secondPlayerAnimationState];
+
+    if (!this.secondPlayerPrefabAnimationNodes || !this.secondPlayerPrefabAnimationSprites) {
+      return;
+    }
+
+    this.secondPlayerPrefabAnimationTime += delta / 1000;
+
+    if (clip.loop) {
+      this.secondPlayerPrefabAnimationTime %= clip.duration;
+    } else {
+      this.secondPlayerPrefabAnimationTime = Math.min(this.secondPlayerPrefabAnimationTime, clip.duration);
+    }
+
+    this.applySecondPlayerPrefabAnimationFrame(clip, this.secondPlayerPrefabAnimationTime);
+  }
+
   private applyPlayerPrefabAnimationFrame(clip: PrefabAnimationClip, time: number) {
     if (!this.playerPrefabAnimationNodes || !this.playerPrefabAnimationSprites) {
       return;
@@ -2659,6 +3327,50 @@ class MainScene extends Phaser.Scene {
     });
 
     Object.values(this.playerPrefabAnimationSprites).forEach((sprite) => {
+      sprite.setAlpha(sprite.baseAlpha);
+    });
+  }
+
+  private applySecondPlayerPrefabAnimationFrame(clip: PrefabAnimationClip, time: number) {
+    if (!this.secondPlayerPrefabAnimationNodes || !this.secondPlayerPrefabAnimationSprites) {
+      return;
+    }
+
+    this.resetSecondPlayerPrefabAnimationPose();
+
+    for (const [nodeKey, curve] of Object.entries(clip.positions ?? {}) as [PrefabAnimationNodeKey, VectorKeyframe[]][]) {
+      const position = this.sampleVectorCurve(curve, time);
+
+      this.applyPrefabNodePosition(this.secondPlayerPrefabAnimationNodes[nodeKey], position.x, position.y);
+    }
+
+    for (const [nodeKey, curve] of Object.entries(clip.rotations ?? {}) as [PrefabAnimationNodeKey, NumberKeyframe[]][]) {
+      this.secondPlayerPrefabAnimationNodes[nodeKey].setRotation(Phaser.Math.DegToRad(-this.sampleNumberCurve(curve, time)));
+    }
+
+    for (const [nodeKey, curve] of Object.entries(clip.scaleY ?? {}) as [PrefabAnimationNodeKey, NumberKeyframe[]][]) {
+      const node = this.secondPlayerPrefabAnimationNodes[nodeKey];
+
+      node.setScale(node.baseScaleX, this.sampleNumberCurve(curve, time));
+    }
+
+    for (const [spriteKey, curve] of Object.entries(clip.alphas ?? {}) as [PrefabAnimationAlphaKey, NumberKeyframe[]][]) {
+      this.secondPlayerPrefabAnimationSprites[spriteKey].setAlpha(this.sampleNumberCurve(curve, time));
+    }
+  }
+
+  private resetSecondPlayerPrefabAnimationPose() {
+    if (!this.secondPlayerPrefabAnimationNodes || !this.secondPlayerPrefabAnimationSprites) {
+      return;
+    }
+
+    Object.values(this.secondPlayerPrefabAnimationNodes).forEach((node) => {
+      node.setPosition(node.baseX, node.baseY);
+      node.setRotation(node.baseRotation);
+      node.setScale(node.baseScaleX, node.baseScaleY);
+    });
+
+    Object.values(this.secondPlayerPrefabAnimationSprites).forEach((sprite) => {
       sprite.setAlpha(sprite.baseAlpha);
     });
   }
@@ -2709,7 +3421,20 @@ class MainScene extends Phaser.Scene {
   }
 
   private createCollisionMask() {
-    const source = this.textures.get('collision').getSourceImage() as HTMLImageElement;
+    const insideLayers = this.createCollisionLayers('collision', true);
+    const outsideLayers = this.createCollisionLayers('collisionOut', false);
+
+    this.collisionData = insideLayers.collisionData;
+    this.ladderData = insideLayers.ladderData;
+    this.collisionWidth = insideLayers.width;
+    this.collisionHeight = insideLayers.height;
+    this.outsideCollisionData = outsideLayers.collisionData;
+    this.outsideCollisionWidth = outsideLayers.width;
+    this.outsideCollisionHeight = outsideLayers.height;
+  }
+
+  private createCollisionLayers(textureKey: string, includeLadders: boolean) {
+    const source = this.textures.get(textureKey).getSourceImage() as HTMLImageElement;
     const canvas = document.createElement('canvas');
     const context = canvas.getContext('2d', { willReadFrequently: true });
 
@@ -2717,7 +3442,12 @@ class MainScene extends Phaser.Scene {
     canvas.height = source.height;
 
     if (!context) {
-      return;
+      return {
+        collisionData: new Uint8Array(0),
+        ladderData: new Uint8Array(0),
+        width: 0,
+        height: 0
+      };
     }
 
     context.drawImage(source, 0, 0);
@@ -2738,13 +3468,15 @@ class MainScene extends Phaser.Scene {
       }
 
       collisionData[index] = r === 255 && g === 255 && b === 255 ? 1 : 0;
-      ladderData[index] = r === 255 && g === 0 && b === 0 ? 1 : 0;
+      ladderData[index] = includeLadders && r === 255 && g === 0 && b === 0 ? 1 : 0;
     }
 
-    this.collisionData = collisionData;
-    this.ladderData = ladderData;
-    this.collisionWidth = canvas.width;
-    this.collisionHeight = canvas.height;
+    return {
+      collisionData,
+      ladderData,
+      width: canvas.width,
+      height: canvas.height
+    };
   }
 
   private createRoomMasks() {
@@ -2820,8 +3552,12 @@ class MainScene extends Phaser.Scene {
       .setVisible(false);
   }
 
-  private collidesWithMap(x: number, y: number) {
-    if (!this.collisionData) {
+  private collidesWithMap(x: number, y: number, isInsideShip = true) {
+    const collisionData = isInsideShip ? this.collisionData : this.outsideCollisionData;
+    const collisionWidth = isInsideShip ? this.collisionWidth : this.outsideCollisionWidth;
+    const collisionHeight = isInsideShip ? this.collisionHeight : this.outsideCollisionHeight;
+
+    if (!collisionData) {
       return false;
     }
 
@@ -2833,20 +3569,26 @@ class MainScene extends Phaser.Scene {
 
     for (let sampleY = top; sampleY <= bottom; sampleY += sampleStep) {
       for (let sampleX = left; sampleX <= right; sampleX += sampleStep) {
-        if (this.isSolidPixel(sampleX, sampleY)) {
+        if (this.isSolidPixel(sampleX, sampleY, collisionData, collisionWidth, collisionHeight)) {
           return true;
         }
       }
     }
 
     for (let sampleX = left; sampleX <= right; sampleX += sampleStep) {
-      if (this.isSolidPixel(sampleX, bottom) || this.isSolidPixel(sampleX, top)) {
+      if (
+        this.isSolidPixel(sampleX, bottom, collisionData, collisionWidth, collisionHeight) ||
+        this.isSolidPixel(sampleX, top, collisionData, collisionWidth, collisionHeight)
+      ) {
         return true;
       }
     }
 
     for (let sampleY = top; sampleY <= bottom; sampleY += sampleStep) {
-      if (this.isSolidPixel(left, sampleY) || this.isSolidPixel(right, sampleY)) {
+      if (
+        this.isSolidPixel(left, sampleY, collisionData, collisionWidth, collisionHeight) ||
+        this.isSolidPixel(right, sampleY, collisionData, collisionWidth, collisionHeight)
+      ) {
         return true;
       }
     }
@@ -2862,7 +3604,10 @@ class MainScene extends Phaser.Scene {
     for (let step = 1; step <= PLAYER_STEP_HEIGHT; step += 1) {
       const testY = currentY - step;
 
-      if (!this.collidesWithMap(this.player?.x ?? nextX, testY) && !this.collidesWithMap(nextX, testY)) {
+      if (
+        !this.collidesWithMap(this.player?.x ?? nextX, testY, this.isPlayerInsideShip) &&
+        !this.collidesWithMap(nextX, testY, this.isPlayerInsideShip)
+      ) {
         return testY;
       }
     }
@@ -2870,19 +3615,15 @@ class MainScene extends Phaser.Scene {
     return undefined;
   }
 
-  private isSolidPixel(x: number, y: number) {
-    if (!this.collisionData) {
-      return false;
-    }
-
+  private isSolidPixel(x: number, y: number, collisionData: Uint8Array, collisionWidth: number, collisionHeight: number) {
     const pixelX = Math.floor(x);
     const pixelY = Math.floor(y);
 
-    if (pixelX < 0 || pixelX >= this.collisionWidth || pixelY < 0 || pixelY >= this.collisionHeight) {
+    if (pixelX < 0 || pixelX >= collisionWidth || pixelY < 0 || pixelY >= collisionHeight) {
       return true;
     }
 
-    return this.collisionData[pixelY * this.collisionWidth + pixelX] === 1;
+    return collisionData[pixelY * collisionWidth + pixelX] === 1;
   }
 
   private updatePlayerState(isVerticalInputPressed: boolean) {
@@ -3001,6 +3742,7 @@ class MainScene extends Phaser.Scene {
     this.gravityButton.setFillStyle(this.isGravityEnabled ? 0x22c55e : 0x475569, 1);
     this.gravityText.setText(this.isGravityEnabled ? 'On' : 'Off');
     this.gravityText.setX(this.isGravityEnabled ? 133 : 132);
+    this.updatePlayerInfoUi();
   }
 
   private liftPlayerOutOfLadder() {
@@ -3012,7 +3754,7 @@ class MainScene extends Phaser.Scene {
     for (let lift = 1; lift <= SCENE_HEIGHT; lift += 1) {
       const testY = this.player.y - lift;
 
-      if (!this.collidesWithMap(this.player.x, testY)) {
+      if (!this.collidesWithMap(this.player.x, testY, this.isPlayerInsideShip)) {
     console.log('Lifting player out of ladder');
         this.player.y = testY;
         this.playerVelocityY = 0;
