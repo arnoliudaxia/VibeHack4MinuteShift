@@ -55,6 +55,25 @@ const ASTEROID_MIN_SPEED = 80;
 const ASTEROID_MAX_SPEED = 220;
 const ASTEROID_MIN_SCALE = 0.7;
 const ASTEROID_MAX_SCALE = 1.5;
+// 上面的破坏性陨石轨道
+const PIXEL_ASTEROID_LANE_MIN_Y = 100;
+const PIXEL_ASTEROID_LANE_MAX_Y = 140;
+const PIXEL_ASTEROID_LANE_MIN_SPAWN_DELAY = 7000;
+const PIXEL_ASTEROID_LANE_MAX_SPAWN_DELAY = 18000;
+const PIXEL_ASTEROID_WARNING_LEAD_TIME = 3000;
+const PIXEL_ASTEROID_TRIGGER_X = 650;
+const EXPLOSION_ANIMATION_KEY = 'explosion-test';
+
+const EXPLOSION_FRAME_KEYS = [
+  'explosion1',
+  'explosion2',
+  'explosion3',
+  'explosion4',
+  'explosion5',
+  'explosion6',
+  'explosion7',
+  'explosion8'
+];
 
 const ASTEROID_ASSETS = [
   { key: 'asteroidGreyTiny', path: '/assets/scene/SpcaeElements/asteroid_grey_tiny.png' },
@@ -80,6 +99,8 @@ type VolumeSound = Phaser.Sound.BaseSound & {
 type AsteroidSprite = Phaser.GameObjects.Image & {
   velocityX: number;
   rotationSpeed: number;
+  isPixelAsteroidLane?: boolean;
+  hasTriggeredPixelAsteroidLaneAction?: boolean;
 };
 
 type PlayerState = 'Normal' | 'Climbing' | 'Healing' | 'Driving' | 'Driving-Repairing';
@@ -695,11 +716,15 @@ class MainScene extends Phaser.Scene {
   private gravityButton?: Phaser.GameObjects.Rectangle;
   private gravityText?: Phaser.GameObjects.Text;
   private stateText?: Phaser.GameObjects.Text;
+  private coordinateText?: Phaser.GameObjects.Text;
   private timerText?: Phaser.GameObjects.Text;
   private secondClock?: Phaser.GameObjects.Graphics;
   private asteroids: AsteroidSprite[] = [];
   private asteroidSpawnTimer = 0;
   private nextAsteroidSpawnDelay = 0;
+  private pixelAsteroidLaneSpawnTimer = 0;
+  private nextPixelAsteroidLaneSpawnDelay = 0;
+  private pixelAsteroidLaneWarningAsteroid?: AsteroidSprite;
   private gameStartTime = 0;
   private displayedGameSeconds = -1;
 
@@ -716,6 +741,9 @@ class MainScene extends Phaser.Scene {
     this.load.image('collision', '/assets/scene/physic.png');
     this.load.image('warningSign', '/assets/VFX/warningSign.png');
     this.load.image('warningSignRock', '/assets/VFX/warningSignRock.png');
+    EXPLOSION_FRAME_KEYS.forEach((key, index) => {
+      this.load.image(key, `/assets/Sprite/explosion/explosion${index + 1}.png`);
+    });
     ASTEROID_ASSETS.forEach((asset) => {
       this.load.image(asset.key, asset.path);
     });
@@ -763,6 +791,10 @@ class MainScene extends Phaser.Scene {
     const spaceEScale = Math.max(width / spaceE.width, height / spaceE.height);
     spaceE.setScale(spaceEScale).setScrollFactor(0);
     this.nextAsteroidSpawnDelay = Phaser.Math.Between(ASTEROID_MIN_SPAWN_DELAY, ASTEROID_MAX_SPAWN_DELAY);
+    this.nextPixelAsteroidLaneSpawnDelay = Phaser.Math.Between(
+      PIXEL_ASTEROID_LANE_MIN_SPAWN_DELAY,
+      PIXEL_ASTEROID_LANE_MAX_SPAWN_DELAY
+    );
 
     const spaceShipFire = this.add.image(width / 2, height / 2, 'spaceShipFire');
     const fireScale = Math.max(width / spaceShipFire.width, height / spaceShipFire.height);
@@ -794,10 +826,16 @@ class MainScene extends Phaser.Scene {
     this.rockWarningSign = this.add
       .image(ROCK_WARNING_SIGN_X, ROCK_WARNING_SIGN_Y, 'warningSignRock')
       .setDisplaySize(ROCK_WARNING_SIGN_SIZE*2, ROCK_WARNING_SIGN_SIZE)
-      .setVisible(true);
+      .setVisible(false);
 
     this.createCollisionMask();
     this.createRoomMasks();
+    this.anims.create({
+      key: EXPLOSION_ANIMATION_KEY,
+      frames: EXPLOSION_FRAME_KEYS.map((key) => ({ key })),
+      frameRate: 16,
+      repeat: 0
+    });
 
     const collisionOverlay = this.createCollisionDebugOverlay(scale);
 
@@ -840,7 +878,7 @@ class MainScene extends Phaser.Scene {
 
     const panel = this.add.container(16, 16).setScrollFactor(0);
     const panelBackground = this.add
-      .rectangle(0, 0, 220, 372, 0x0f172a, 0.82)
+      .rectangle(0, 0, 220, 416, 0x0f172a, 0.82)
       .setOrigin(0);
     const soundLabel = this.add.text(14, 21, 'BGM', {
       fontFamily: 'Arial, Helvetica, sans-serif',
@@ -998,6 +1036,18 @@ class MainScene extends Phaser.Scene {
       menu.add([optionBackground, optionLabel]);
     });
 
+    const coordinateLabel = this.add.text(14, 373, 'Position', {
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: '16px',
+      color: '#ffffff'
+    });
+    this.coordinateText = this.add.text(96, 373, 'X: 0 Y: 0', {
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: '15px',
+      color: '#ffffff'
+    });
+    this.updatePlayerCoordinateUi();
+
     panel.add([
       panelBackground,
       soundLabel,
@@ -1026,7 +1076,9 @@ class MainScene extends Phaser.Scene {
       selectedBackground,
       selectedText,
       arrow,
-      menu
+      menu,
+      coordinateLabel,
+      this.coordinateText
     ]);
 
     selectedBackground.on('pointerdown', () => {
@@ -1161,6 +1213,7 @@ class MainScene extends Phaser.Scene {
       this.syncPlayerPrefabVisual();
       this.updatePlayerHealthBar();
       this.updatePlayerProgressBar();
+      this.updatePlayerCoordinateUi();
       return;
     }
 
@@ -1198,6 +1251,7 @@ class MainScene extends Phaser.Scene {
     this.syncPlayerPrefabVisual();
     this.updatePlayerHealthBar();
     this.updatePlayerProgressBar();
+    this.updatePlayerCoordinateUi();
   }
 
   private createPlayerPrefabVisual(x: number, y: number) {
@@ -1316,11 +1370,28 @@ class MainScene extends Phaser.Scene {
 
   private updateAsteroids(delta: number) {
     this.asteroidSpawnTimer += delta;
+    this.pixelAsteroidLaneSpawnTimer += delta;
 
     if (this.asteroidSpawnTimer >= this.nextAsteroidSpawnDelay) {
       this.spawnAsteroid();
       this.asteroidSpawnTimer = 0;
       this.nextAsteroidSpawnDelay = Phaser.Math.Between(ASTEROID_MIN_SPAWN_DELAY, ASTEROID_MAX_SPAWN_DELAY);
+    }
+
+    if (
+      !this.pixelAsteroidLaneWarningAsteroid &&
+      this.pixelAsteroidLaneSpawnTimer >= this.nextPixelAsteroidLaneSpawnDelay - PIXEL_ASTEROID_WARNING_LEAD_TIME
+    ) {
+      this.showRockWarningSign();
+    }
+
+    if (this.pixelAsteroidLaneSpawnTimer >= this.nextPixelAsteroidLaneSpawnDelay) {
+      this.spawnPixelAsteroidLaneAsteroid();
+      this.pixelAsteroidLaneSpawnTimer = 0;
+      this.nextPixelAsteroidLaneSpawnDelay = Phaser.Math.Between(
+        PIXEL_ASTEROID_LANE_MIN_SPAWN_DELAY,
+        PIXEL_ASTEROID_LANE_MAX_SPAWN_DELAY
+      );
     }
 
     const deltaSeconds = delta / 1000;
@@ -1330,6 +1401,26 @@ class MainScene extends Phaser.Scene {
 
       asteroid.x += asteroid.velocityX * deltaSeconds;
       asteroid.rotation += asteroid.rotationSpeed * deltaSeconds;
+
+      if (
+        asteroid === this.pixelAsteroidLaneWarningAsteroid &&
+        asteroid.x - asteroid.displayWidth / 2 <= this.scale.width
+      ) {
+        this.hideRockWarningSign();
+        this.pixelAsteroidLaneWarningAsteroid = undefined;
+      }
+
+      if (
+        asteroid.isPixelAsteroidLane &&
+        !asteroid.hasTriggeredPixelAsteroidLaneAction &&
+        asteroid.x <= PIXEL_ASTEROID_TRIGGER_X
+      ) {
+        asteroid.hasTriggeredPixelAsteroidLaneAction = true;
+        this.onPixelAsteroidLaneReachedTriggerX(asteroid.x, asteroid.y);
+        asteroid.destroy();
+        this.asteroids.splice(index, 1);
+        continue;
+      }
 
       if (asteroid.x + asteroid.displayWidth / 2 >= -40) {
         continue;
@@ -1342,10 +1433,22 @@ class MainScene extends Phaser.Scene {
 
   private spawnAsteroid() {
     const asteroidAsset = Phaser.Utils.Array.GetRandom(ASTEROID_ASSETS);
+    this.createAsteroid(asteroidAsset.key, Phaser.Math.Between(840, 1000));
+  }
+
+  private spawnPixelAsteroidLaneAsteroid() {
+    this.pixelAsteroidLaneWarningAsteroid = this.createAsteroid(
+      'pixelAsteroid',
+      Phaser.Math.Between(PIXEL_ASTEROID_LANE_MIN_Y, PIXEL_ASTEROID_LANE_MAX_Y),
+      true
+    );
+  }
+
+  private createAsteroid(textureKey: string, y: number, isPixelAsteroidLane = false) {
     const asteroid = this.add.image(
       this.scale.width + 80,
-      Phaser.Math.Between(840, 1000),
-      asteroidAsset.key
+      y,
+      textureKey
     ) as AsteroidSprite;
 
     asteroid
@@ -1353,8 +1456,26 @@ class MainScene extends Phaser.Scene {
       .setAlpha(Phaser.Math.FloatBetween(0.65, 1));
     asteroid.velocityX = -Phaser.Math.Between(ASTEROID_MIN_SPEED, ASTEROID_MAX_SPEED);
     asteroid.rotationSpeed = Phaser.Math.FloatBetween(-1.2, 1.2);
+    asteroid.isPixelAsteroidLane = isPixelAsteroidLane;
+    asteroid.hasTriggeredPixelAsteroidLaneAction = false;
 
     this.asteroids.push(asteroid);
+
+    return asteroid;
+  }
+
+  private onPixelAsteroidLaneReachedTriggerX(x: number, y: number) {
+    console.log('上面陨石撞到了飞船');
+    this.playExplosionTest(x, y);
+  }
+
+  private playExplosionTest(x: number, y: number) {
+    const explosion = this.add.sprite(x, y, EXPLOSION_FRAME_KEYS[0]).setScale(4);
+
+    explosion.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
+      explosion.destroy();
+    });
+    explosion.play(EXPLOSION_ANIMATION_KEY);
   }
 
   private updatePlayerHealthBar() {
@@ -1376,6 +1497,14 @@ class MainScene extends Phaser.Scene {
       .fillRoundedRect(x, y, PLAYER_HEALTH_BAR_WIDTH * healthRatio, PLAYER_HEALTH_BAR_HEIGHT, 2)
       .lineStyle(1, 0xffffff, 0.8)
       .strokeRoundedRect(x, y, PLAYER_HEALTH_BAR_WIDTH, PLAYER_HEALTH_BAR_HEIGHT, 2);
+  }
+
+  private updatePlayerCoordinateUi() {
+    if (!this.player || !this.coordinateText) {
+      return;
+    }
+
+    this.coordinateText.setText(`X: ${Math.round(this.player.x)} Y: ${Math.round(this.player.y)}`);
   }
 
   private setPlayerHealth(health: number) {
@@ -1508,6 +1637,23 @@ class MainScene extends Phaser.Scene {
     if (this.rockWarningSign?.visible) {
       this.rockWarningSign.setAlpha(alpha);
     }
+  }
+
+  private showRockWarningSign() {
+    if (!this.rockWarningSign || this.rockWarningSign.visible) {
+      return;
+    }
+
+    this.driveWarningBlinkTime = 0;
+    this.rockWarningSign.setVisible(true).setAlpha(1);
+  }
+
+  private hideRockWarningSign() {
+    if (!this.rockWarningSign) {
+      return;
+    }
+
+    this.rockWarningSign.setVisible(false).setAlpha(0);
   }
 
   private isRepairingState(state: PlayerState) {
