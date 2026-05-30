@@ -6,7 +6,7 @@
 
 当前项目使用 Phaser 创建游戏场景，通过 Vite 提供开发服务器和生产构建。游戏入口位于 `src/main.ts`，页面入口位于 `index.html`。
 
-当前场景会加载 `assets/scene/space.png` 作为底层背景，`assets/scene/spaceShip.png` 作为飞船场景，并根据画布尺寸自适应缩放。玩家逻辑仍使用一个隐藏的胶囊形 `Graphics` 对象作为移动和碰撞锚点，实际显示层使用 Unity `Player.prefab` 复刻出的分层 2D 角色。
+当前场景使用 `assets/scene/spaceBg/星空1.png` 与 `assets/scene/spaceBg/星空2.png` 循环切换作为底层星空背景，并叠加 `assets/scene/spaceBg/spaceE.png`、动态陨石层、飞船图层和房间图层。玩家逻辑仍使用一个隐藏的胶囊形 `Graphics` 对象作为移动和碰撞锚点，实际显示层使用 Unity `Player.prefab` 复刻出的分层 2D 角色。
 
 ## 技术栈
 
@@ -20,6 +20,8 @@
 .
 ├── assets/          # 游戏资源
 │   ├── scene/       # 场景图、覆盖层和物理标记图
+│   ├── Sprite/      # 序列帧和精灵动画资源
+│   ├── VFX/         # 警告图标等特效资源
 │   ├── player-prefab/ # 从 Unity prefab 复制出的玩家分层贴图
 │   └── Sound/       # 音频资源
 ├── src/
@@ -67,11 +69,66 @@ npm run preview
 this.load.image('background', '/assets/scene/spaceShip.png');
 ```
 
+## 场景与房间
+
+### 图层顺序
+
+当前主要图层从下到上大致为：
+
+- 星空背景：`spaceBg/星空2.png` 与 `spaceBg/星空1.png` 循环切换。
+- 星空前景：`spaceBg/spaceE.png`。
+- 动态陨石层：运行时随机生成。
+- 飞船火焰层：`spaceShipFire.png`，由 UI 手动显示或隐藏。
+- 飞船主体：`spaceShip.png`。
+- 房间图层：`heal.png`、`workshop.png`、`drive.png` 或 `driveFire.png`。
+- 外部损坏层：`OuterWrong.png`，默认隐藏，上层陨石命中后显示。
+- 警告图标：`warningSign.png`、`warningSignRock.png`。
+- 玩家、玩家 UI、调试 UI。
+
+### 房间配置
+
+房间数据集中在 `src/main.ts` 的 `ROOM_CONFIGS` 中。每个房间包含：
+
+- `id`：房间唯一标识。
+- `label`：UI 显示名称。
+- `defaultTextureKey`：默认显示贴图。
+- `maskTextureKey`：用于 alpha mask 区域检测的贴图。
+- `layerOptions`：房间状态选项和资源路径。
+
+当前房间：
+
+- `Drive`：包含 `Normal` 和 `Wrong` 两种状态，UI 按钮可在二者之间切换。`Wrong` 使用 `driveFire.png`，并显示闪烁的 `warningSign.png`。
+- `Heal`：使用 `heal.png`，玩家进入该房间 alpha mask 后进入 `Healing` 状态。
+- `Workshop`：使用 `workshop.png`，当前只作为房间图层显示。
+- `OuterWrong`：使用 `OuterWrong.png`，不是 `ROOM_CONFIGS` 房间，使用 `isOuterWrong` 变量记录状态。上层陨石命中飞船后显示，UI 的 `Outer` 按钮可修复并隐藏。
+
+### 陨石与特效
+
+当前有两条陨石轨道：
+
+- 下方随机轨道：Y 范围当前为 `840~1000`，从右向左飞行，资源池包含普通陨石、`金属碎片.png` 和 `冰晶.png`。
+- 上方破坏轨道：Y 范围为 `100~140`，只使用 `pixel_asteroid.png`。
+
+上方破坏轨道规则：
+
+- 距离上方陨石生成还有 `3s` 时，`warningSignRock.png` 开始闪烁。
+- 当上方陨石进入画面后，`warningSignRock.png` 隐藏。
+- 当上方陨石 `x <= 650` 时，调用 `onPixelAsteroidLaneReachedTriggerX(...)`，陨石对象销毁，并播放爆炸动画。
+- 爆炸动画使用 `assets/Sprite/explosion/explosion1.png` 到 `explosion8.png` 八张独立图片顺序播放，不使用精灵图。
+- 上方陨石命中触发后会把 `isOuterWrong` 设置为 `true`，并显示 `OuterWrong.png`。
+
+下方特殊素材规则：
+
+- `金属碎片.png` 与 `冰晶.png` 固定 `alpha = 1`，不使用随机透明度。
+- `金属碎片.png` 与玩家碰撞时调用空函数 `onMetalDebrisHitPlayer()`。
+- `冰晶.png` 与玩家碰撞时调用空函数 `onIceCrystalHitPlayer()`。
+- 每个特殊陨石对象对玩家碰撞只触发一次。
+
 ## 物理系统
 
 项目当前使用 `assets/scene/physic.png` 作为像素级物理标记图。该图片不会直接显示在游戏场景中，而是在运行时通过 Canvas 读取像素数据，并转换成用于碰撞和状态检测的数据层。
 
-`physic.png` 的尺寸应与主场景图一致，目前为 `1672x941`。由于它与 `space.png`、`spaceShip.png`、`drive.png` 等场景图尺寸一致，可以直接使用场景坐标进行像素采样，不需要额外坐标换算。
+`physic.png` 的尺寸应与主场景图一致，目前为 `1672x941`。由于它与 `spaceShip.png`、房间覆盖图和主要场景图尺寸一致，可以直接使用场景坐标进行像素采样，不需要额外坐标换算。
 
 ### 颜色语义
 
@@ -93,6 +150,8 @@ const COLLISION_ALPHA_THRESHOLD = 16;
 - `collisionData`：由 `#FFFFFF` 像素生成，用于实体阻挡。
 - `ladderData`：由 `#FF0000` 像素生成，用于梯子区域检测。
 
+房间 alpha mask 会额外生成到 `roomMasks` 中。它们只用于房间状态检测，例如 Drive、Heal、Workshop 的进入区域判断，不会参与 `collidesWithMap(...)` 的阻挡逻辑。
+
 核心语义等价于：
 
 ```ts
@@ -103,6 +162,8 @@ ladderData[index] = r === 255 && g === 0 && b === 0 ? 1 : 0;
 ### 碰撞检测
 
 玩家当前是一个胶囊形显示对象，但物理检测使用玩家包围盒进行采样。检测时会在玩家包围盒内部和边缘按固定步长采样像素，目前采样步长为 `4` 像素。
+
+玩家的视觉胶囊体默认隐藏；实际功能锚点仍保留，用于移动、白色碰撞、梯子检测、房间检测、生命条和进度条跟随。
 
 移动时采用 X/Y 分轴处理：
 
@@ -186,6 +247,12 @@ stateDiagram-v2
 - 按住 `E` 会以每秒 20% 的速度增加维修进度。
 - 维修进度满时，进度归零并隐藏，Drive 房间状态从 `Wrong` 切回 `Normal`。
 
+其他状态相关规则：
+
+- `isOuterWrong` 记录飞船外部是否损坏。上层陨石触发爆炸后会设置为 `true`，并显示 `OuterWrong.png`。
+- UI 中的 `Outer` 按钮在 `isOuterWrong === true` 时显示为红色 `Repair`，点击后设置为 `false` 并隐藏 `OuterWrong.png`。
+- Drive 的 UI 控件现在是按钮，不是下拉菜单。点击按钮在 `Normal` 和 `Wrong` 之间切换。
+
 UI 中的 `Player State` 会显示当前状态。
 
 ## 玩家渲染与动画
@@ -194,6 +261,18 @@ UI 中的 `Player State` 会显示当前状态。
 
 - 隐藏胶囊体：`Phaser.GameObjects.Graphics`，只作为移动、碰撞、梯子检测和状态机坐标锚点。
 - prefab 视觉层：由 `assets/player-prefab/` 下的多张 PNG 组合成分层角色，跟随隐藏胶囊体坐标移动。
+
+玩家上方有生命条：
+
+- 默认生命值为 `100`。
+- 生命值上限为 `100`。
+- `Healing` 状态下以 `15/s` 回复。
+
+玩家右上角有圆形维修进度条：
+
+- 默认隐藏。
+- 进入 `*-Repairing` 状态时显示。
+- 当前 `Driving-Repairing` 中按住 `E` 以每秒 `20%` 增加。
 
 视觉层来源于 Unity 的 `Player.prefab`，当前复刻了可见部件，包括身体、头、头发、眼睛、胸甲、盾牌、弓和箭矢等。角色默认朝右，水平移动时会根据 `A` / `D` 输入翻转视觉层；该翻转只影响显示，不影响碰撞体和物理逻辑。
 
@@ -223,7 +302,27 @@ prefab 视觉层维护独立动画状态机，默认状态为 `Idle`。动画状
 - `Stun.anim`
 - `Defeat.anim`
 
-### UI 切换
+### UI 面板
+
+左上角调试面板当前分为 `Player` 和 `Scene` 两个分组。
+
+`Player` 分组顺序：
+
+- `Position`：显示玩家当前 `X/Y` 整数坐标。
+- `Player State`：显示当前状态机状态。
+- `Gravity`：手动开关重力；`Climbing` 状态下不可手动切换。
+- `Animation`：手动切换 prefab 视觉动画。
+- `Progress`：手动调整维修进度条数值。
+
+`Scene` 分组包含：
+
+- `BGM`：切换静音或播放。
+- `Collision`：显示或隐藏碰撞调试层。
+- `Ship Fire`：显示或隐藏 `spaceShipFire.png`。
+- `Drive`：按钮切换 `Normal` 与 `Wrong`。
+- `Outer`：当外部损坏时可点击修复。
+
+### 动画切换
 
 左上角调试面板包含 `Animation` 行。点击右侧按钮会按以下顺序循环切换动画：
 
@@ -255,6 +354,9 @@ UI 中的 `Collision` 按钮可以切换碰撞层可视化。可视化层由 `ph
 
 - 白色实体碰撞区域显示为半透明红色。
 - 红色梯子触发区域显示为偏橙的半透明颜色。
+- 玩家逻辑碰撞体显示为蓝色矩形。
+- `金属碎片.png` 碰撞体显示为黄色矩形。
+- `冰晶.png` 碰撞体显示为青色矩形。
 
 该调试层只用于观察物理标记，不参与渲染素材本身。
 
