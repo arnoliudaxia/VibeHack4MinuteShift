@@ -221,16 +221,29 @@ type AsteroidAsset = {
   collisionKind?: AsteroidCollisionKind;
 };
 
-type PlayerState = 'Normal' | 'Climbing' | 'Healing' | 'Driving' | 'Driving-Repairing' | 'Repoing' | 'Outer-Repairing';
+type PlayerState =
+  | 'Normal'
+  | 'Climbing'
+  | 'Healing'
+  | 'Driving'
+  | 'Driving-Repairing'
+  | 'Living-Repairing'
+  | 'Plant-Repairing'
+  | 'Repoing'
+  | 'Outer-Repairing';
 
 type PlayerStateTransitionContext = {
   isTouchingLadder: boolean;
   isInsideHealRoom: boolean;
   isInsideDriveRoom: boolean;
+  isInsideLivingRoom: boolean;
+  isInsidePlantRoom: boolean;
   isInsideRepoFullRoom: boolean;
   isInsideOuterWrongRoom: boolean;
   isVerticalInputPressed: boolean;
   isDriveRoomWrong: boolean;
+  isLivingRoomWrong: boolean;
+  isPlantRoomWrong: boolean;
   isOuterWrong: boolean;
   isRepairInputPressed: boolean;
 };
@@ -1033,6 +1046,14 @@ class MainScene extends Phaser.Scene {
         return 'Driving';
       }
 
+      if (context.isInsideLivingRoom && context.isLivingRoomWrong && context.isRepairInputPressed) {
+        return 'Living-Repairing';
+      }
+
+      if (context.isInsidePlantRoom && context.isPlantRoomWrong && context.isRepairInputPressed) {
+        return 'Plant-Repairing';
+      }
+
       if (context.isInsideRepoFullRoom) {
         return 'Repoing';
       }
@@ -1073,6 +1094,10 @@ class MainScene extends Phaser.Scene {
 
       return 'Normal';
     },
+    'Living-Repairing': (context) =>
+      context.isInsideLivingRoom && context.isLivingRoomWrong ? 'Living-Repairing' : 'Normal',
+    'Plant-Repairing': (context) =>
+      context.isInsidePlantRoom && context.isPlantRoomWrong ? 'Plant-Repairing' : 'Normal',
     Repoing: (context) => context.isInsideRepoFullRoom ? 'Repoing' : 'Normal',
     'Outer-Repairing': (context) => context.isOuterWrong && context.isInsideOuterWrongRoom ? 'Outer-Repairing' : 'Normal'
   };
@@ -2778,11 +2803,13 @@ class MainScene extends Phaser.Scene {
     this.updateSecondPlayerPrefabAnimation(delta);
     this.updatePlayerState(this.keys.W.isDown || this.keys.S.isDown);
     this.updateRepairProgress(delta);
+    this.updateFireRoomRepairProgress(delta);
     this.updateRepoProgress(delta);
     this.updateOuterRepairProgress(delta);
     this.updateHealing(delta);
     this.updateSecondPlayer(delta);
     this.updateSecondPlayerRepairProgress(delta);
+    this.updateSecondPlayerFireRoomRepairProgress(delta);
     this.updateSecondPlayerRepoProgress(delta);
     this.updateSecondPlayerOuterRepairProgress(delta);
     this.updateSecondHealing(delta);
@@ -3233,11 +3260,8 @@ class MainScene extends Phaser.Scene {
   }
 
   private handlePlayerAction(playerId: PlayerId) {
-    if (this.isPlayerHoldingTool(playerId, 'Extinguisher')) {
-      if (!this.tryExtinguishFire(playerId)) {
-        this.dropPlayerExtinguisher(playerId);
-      }
-
+    if (this.isPlayerHoldingTool(playerId, 'Extinguisher') && !this.isPlayerInBurningRoom(playerId)) {
+      this.dropPlayerExtinguisher(playerId);
       return;
     }
 
@@ -3305,21 +3329,10 @@ class MainScene extends Phaser.Scene {
     return state !== 'Normal' && state !== 'Climbing';
   }
 
-  private tryExtinguishFire(playerId: PlayerId) {
+  private isPlayerInBurningRoom(playerId: PlayerId) {
     const player = this.getPlayerById(playerId);
 
-    if (!player) {
-      return false;
-    }
-
-    const fireRoom = this.getOverlappingBurningRoom(player.x, player.y);
-
-    if (!fireRoom) {
-      return false;
-    }
-
-    this.setFireRoomNormal(fireRoom);
-    return true;
+    return !!player && !!this.getOverlappingBurningRoom(player.x, player.y);
   }
 
   private getOverlappingBurningRoom(x: number, y: number): FireRoomId | undefined {
@@ -3350,6 +3363,42 @@ class MainScene extends Phaser.Scene {
     }
 
     this.setPlantRoomOption('Normal');
+  }
+
+  private tryExtinguishFire(playerId: PlayerId) {
+    const player = this.getPlayerById(playerId);
+
+    if (!player) {
+      return false;
+    }
+
+    const fireRoom = this.getOverlappingBurningRoom(player.x, player.y);
+
+    if (!fireRoom) {
+      return false;
+    }
+
+    if (playerId === 'player1') {
+      this.playerState = fireRoom === 'drive' ? 'Driving-Repairing' : 'Normal';
+      if (fireRoom === 'living') {
+        this.playerState = 'Living-Repairing';
+      }
+      if (fireRoom === 'plant') {
+        this.playerState = 'Plant-Repairing';
+      }
+      this.applyPlayerState();
+    } else {
+      this.secondPlayerState = fireRoom === 'drive' ? 'Driving-Repairing' : 'Normal';
+      if (fireRoom === 'living') {
+        this.secondPlayerState = 'Living-Repairing';
+      }
+      if (fireRoom === 'plant') {
+        this.secondPlayerState = 'Plant-Repairing';
+      }
+      this.applySecondPlayerState();
+    }
+
+    return true;
   }
 
   private dropPlayerExtinguisher(playerId: PlayerId) {
@@ -4303,6 +4352,41 @@ class MainScene extends Phaser.Scene {
     this.updatePlayerProgressBar();
   }
 
+  private updateFireRoomRepairProgress(delta: number) {
+    if (!this.keys?.E.isDown) {
+      return;
+    }
+
+    if (this.playerState === 'Living-Repairing') {
+      this.setPlayerProgress(this.playerProgress + PLAYER_REPAIR_PROGRESS_PER_SECOND * (delta / 1000));
+
+      if (this.playerProgress < 1) {
+        return;
+      }
+
+        this.setLivingRoomOption('Normal');
+      this.setPlayerProgress(0);
+      this.playerState = 'Normal';
+      this.applyPlayerState();
+      this.updatePlayerProgressBar();
+      return;
+    }
+
+    if (this.playerState === 'Plant-Repairing') {
+      this.setPlayerProgress(this.playerProgress + PLAYER_REPAIR_PROGRESS_PER_SECOND * (delta / 1000));
+
+      if (this.playerProgress < 1) {
+        return;
+      }
+
+      this.setPlantRoomOption('Normal');
+      this.setPlayerProgress(0);
+      this.playerState = 'Normal';
+      this.applyPlayerState();
+      this.updatePlayerProgressBar();
+    }
+  }
+
   private updateSecondPlayerRepairProgress(delta: number) {
     if (this.secondPlayerState !== 'Driving-Repairing' || !this.secondPlayerKeys?.L.isDown) {
       return;
@@ -4319,6 +4403,41 @@ class MainScene extends Phaser.Scene {
     this.secondPlayerState = this.overlapsSecondPlayerCurrentDriveRoom() ? 'Driving' : 'Normal';
     this.applySecondPlayerState();
     this.updateSecondPlayerProgressBar();
+  }
+
+  private updateSecondPlayerFireRoomRepairProgress(delta: number) {
+    if (!this.secondPlayerKeys?.L.isDown) {
+      return;
+    }
+
+    if (this.secondPlayerState === 'Living-Repairing') {
+      this.setSecondPlayerProgress(this.secondPlayerProgress + PLAYER_REPAIR_PROGRESS_PER_SECOND * (delta / 1000));
+
+      if (this.secondPlayerProgress < 1) {
+        return;
+      }
+
+      this.setLivingRoomOption('Normal');
+      this.setSecondPlayerProgress(0);
+      this.secondPlayerState = 'Normal';
+      this.applySecondPlayerState();
+      this.updateSecondPlayerProgressBar();
+      return;
+    }
+
+    if (this.secondPlayerState === 'Plant-Repairing') {
+      this.setSecondPlayerProgress(this.secondPlayerProgress + PLAYER_REPAIR_PROGRESS_PER_SECOND * (delta / 1000));
+
+      if (this.secondPlayerProgress < 1) {
+        return;
+      }
+
+      this.setPlantRoomOption('Normal');
+      this.setSecondPlayerProgress(0);
+      this.secondPlayerState = 'Normal';
+      this.applySecondPlayerState();
+      this.updateSecondPlayerProgressBar();
+    }
   }
 
   private updateRepoProgress(delta: number) {
@@ -4633,6 +4752,14 @@ class MainScene extends Phaser.Scene {
 
   private isDriveRoomWrong() {
     return this.currentDriveRoomOption === 'Wrong';
+  }
+
+  private isLivingRoomWrong() {
+    return this.currentLivingRoomOption === 'Wrong';
+  }
+
+  private isPlantRoomWrong() {
+    return this.currentPlantRoomOption === 'Wrong';
   }
 
   private isRepoRoomFull() {
@@ -5197,10 +5324,14 @@ class MainScene extends Phaser.Scene {
       isTouchingLadder: this.overlapsLadder(x, y),
       isInsideHealRoom: this.overlapsRoom(HEAL_ROOM_CONFIG, x, y),
       isInsideDriveRoom: this.overlapsRoom(DRIVE_ROOM_CONFIG, x, y),
+      isInsideLivingRoom: this.overlapsRoom(LIVING_ROOM_CONFIG, x, y),
+      isInsidePlantRoom: this.overlapsRoom(PLANT_ROOM_CONFIG, x, y),
       isInsideRepoFullRoom: this.isRepoRoomFull() && this.overlapsRoom(REPO_ROOM_CONFIG, x, y),
       isInsideOuterWrongRoom: this.overlapsMask(OUTER_WRONG_MASK_ID, x, y),
       isVerticalInputPressed,
       isDriveRoomWrong: this.isDriveRoomWrong(),
+      isLivingRoomWrong: this.isLivingRoomWrong(),
+      isPlantRoomWrong: this.isPlantRoomWrong(),
       isOuterWrong: this.isOuterWrong,
       isRepairInputPressed
     };
@@ -5234,6 +5365,17 @@ class MainScene extends Phaser.Scene {
 
   private applyPlayerState() {
     if (!this.stateText) {
+      return;
+    }
+
+    if (this.playerState === 'Living-Repairing' || this.playerState === 'Plant-Repairing') {
+      this.isGravityEnabled = true;
+      this.isWhiteCollisionEnabled = true;
+      this.playerVelocityY = 0;
+      this.updateGravityUi();
+      this.stateText.setColor('#f97316');
+      this.updatePlayerSpeedUi();
+      this.updatePlayerProgressBar();
       return;
     }
 
@@ -5313,6 +5455,15 @@ class MainScene extends Phaser.Scene {
   }
 
   private applySecondPlayerState() {
+    if (this.secondPlayerState === 'Living-Repairing' || this.secondPlayerState === 'Plant-Repairing') {
+      this.isSecondPlayerGravityEnabled = true;
+      this.isSecondPlayerWhiteCollisionEnabled = true;
+      this.secondPlayerVelocityY = 0;
+      this.updateSecondPlayerProgressBar();
+      this.updateSecondPlayerInfoUi();
+      return;
+    }
+
     if (this.secondPlayerState === 'Climbing') {
       this.isSecondPlayerGravityEnabled = false;
       this.isSecondPlayerWhiteCollisionEnabled = false;
