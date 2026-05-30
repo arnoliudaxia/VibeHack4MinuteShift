@@ -80,7 +80,7 @@ this.load.image('background', '/assets/scene/spaceShip.png');
 - 动态陨石层：运行时随机生成。
 - 飞船火焰层：`VFX/fireV.png`，由 UI 手动显示或隐藏，并以 5 秒为周期在 X 轴向右 50px 后返回。
 - 飞船主体：`spaceShip.png`。
-- 房间图层：`heal.png`、`workshop.png`、`living.png`、`plant.png`、`Tube.png`、`RepoFull.png` 或 `RepoEmpty.png`、`drive.png` 或 `driveFire.png`。
+- 房间图层：`heal.png`、`workshop.png`、`living.png`、`plant.png`、`Tube.png`、`Power.png`、`RepoFull.png` 或 `RepoEmpty.png`、`drive.png` 或 `driveFire.png`。
 - 外部损坏层：`OuterWrong.png`，默认隐藏，上层陨石命中后显示。
 - 警告图标：`warningSign.png`、`warningSignRock.png`。
 - 玩家、玩家 UI、调试 UI。
@@ -103,6 +103,7 @@ this.load.image('background', '/assets/scene/spaceShip.png');
 - `Living`：使用 `living.png`，当前只作为房间图层显示。
 - `Plant`：使用 `plant.png`，当前只作为房间图层显示。
 - `Tube`：使用 `Tube.png`，当前只作为房间图层显示。
+- `Power`：使用 `Power.png`，当前只作为房间图层显示。
 - `Repo`：右下角房间，包含 `Full` 和 `Empty` 两种状态，默认显示 `RepoFull.png`，UI 按钮可切换为 `RepoEmpty.png`。
 - `OuterWrong`：使用 `OuterWrong.png`，不是 `ROOM_CONFIGS` 房间，使用 `isOuterWrong` 变量记录状态。上层陨石命中飞船后显示，UI 的 `Outer` 按钮可修复并隐藏。
 
@@ -119,6 +120,7 @@ this.load.image('background', '/assets/scene/spaceShip.png');
 - 当上方陨石进入画面后，`warningSignRock.png` 隐藏。
 - 当上方陨石 `x <= 650` 时，调用 `onPixelAsteroidLaneReachedTriggerX(...)`，陨石对象销毁，并播放爆炸动画。
 - 爆炸动画使用 `assets/Sprite/explosion/explosion1.png` 到 `explosion8.png` 八张独立图片顺序播放，不使用精灵图。
+- `PowerCrystal` 动画使用 `assets/Sprite/Crystal Drain-cached-frames/frame_001.png` 到 `frame_016.png` 十六张独立图片顺序播放。PS 设计坐标 `X=814, Y=645` 按左上角解释，Phaser sprite 实际中心点为 `X=850, Y=685`，显示尺寸为 `72x80`。UI 的 `Crystal` 按钮会从第一帧开始播放一次，结束后回到第一帧。
 - 上方陨石命中触发后会把 `isOuterWrong` 设置为 `true`，并显示 `OuterWrong.png`。
 
 下方特殊素材规则：
@@ -154,7 +156,7 @@ const COLLISION_ALPHA_THRESHOLD = 16;
 - `collisionData`：由 `#FFFFFF` 像素生成，用于实体阻挡。
 - `ladderData`：由 `#FF0000` 像素生成，用于梯子区域检测。
 
-房间 alpha mask 会额外生成到 `roomMasks` 中。它们只用于房间状态检测，例如 Drive、Heal、Workshop、Living、Plant、Tube、Repo 的进入区域判断，不会参与 `collidesWithMap(...)` 的阻挡逻辑。
+房间 alpha mask 会额外生成到 `roomMasks` 中。它们只用于房间状态检测，例如 Drive、Heal、Workshop、Living、Plant、Tube、Power、Repo 的进入区域判断，不会参与 `collidesWithMap(...)` 的阻挡逻辑。
 
 核心语义等价于：
 
@@ -327,6 +329,7 @@ prefab 视觉层维护独立动画状态机，默认状态为 `Idle`。动画状
 - `Drive`：按钮切换 `Normal` 与 `Wrong`。
 - `Outer`：当外部损坏时可点击修复。
 - `Repo`：按钮切换右下角 Repo 房间的 `Full` 与 `Empty` 贴图。
+- `Crystal`：播放一次 `PowerCrystal` 动画，播放结束后回到第一帧。
 
 ### 动画切换
 

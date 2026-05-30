@@ -63,6 +63,11 @@ const PIXEL_ASTEROID_LANE_MAX_SPAWN_DELAY = 18000;
 const PIXEL_ASTEROID_WARNING_LEAD_TIME = 3000;
 const PIXEL_ASTEROID_TRIGGER_X = 650;
 const EXPLOSION_ANIMATION_KEY = 'explosion-test';
+const POWER_CRYSTAL_ANIMATION_KEY = 'PowerCrystal';
+const POWER_CRYSTAL_WIDTH = 72;
+const POWER_CRYSTAL_HEIGHT = 80;
+const POWER_CRYSTAL_X = 814 + POWER_CRYSTAL_WIDTH / 2;
+const POWER_CRYSTAL_Y = 645 + POWER_CRYSTAL_HEIGHT / 2;
 
 const EXPLOSION_FRAME_KEYS = [
   'explosion1',
@@ -74,6 +79,11 @@ const EXPLOSION_FRAME_KEYS = [
   'explosion7',
   'explosion8'
 ];
+
+const POWER_CRYSTAL_FRAME_KEYS = Array.from(
+  { length: 16 },
+  (_, index) => `powerCrystal${(index + 1).toString().padStart(3, '0')}`
+);
 
 const ASTEROID_ASSETS: AsteroidAsset[] = [
   { key: 'asteroidGreyTiny', path: '/assets/scene/SpcaeElements/asteroid_grey_tiny.png' },
@@ -251,6 +261,15 @@ const ROOM_CONFIGS: RoomConfig[] = [
     ]
   },
   {
+    id: 'power',
+    label: 'Power',
+    defaultTextureKey: 'power',
+    maskTextureKey: 'power',
+    layerOptions: [
+      { label: 'Normal', textureKey: 'power', assetPath: '/assets/scene/ShipRoom/Power.png' }
+    ]
+  },
+  {
     id: 'repo',
     label: 'Repo',
     defaultTextureKey: 'repoFull',
@@ -268,6 +287,7 @@ const WORKSHOP_ROOM_CONFIG = ROOM_CONFIGS.find((room) => room.id === 'workshop')
 const LIVING_ROOM_CONFIG = ROOM_CONFIGS.find((room) => room.id === 'living') ?? ROOM_CONFIGS[0];
 const PLANT_ROOM_CONFIG = ROOM_CONFIGS.find((room) => room.id === 'plant') ?? ROOM_CONFIGS[0];
 const TUBE_ROOM_CONFIG = ROOM_CONFIGS.find((room) => room.id === 'tube') ?? ROOM_CONFIGS[0];
+const POWER_ROOM_CONFIG = ROOM_CONFIGS.find((room) => room.id === 'power') ?? ROOM_CONFIGS[0];
 const REPO_ROOM_CONFIG = ROOM_CONFIGS.find((room) => room.id === 'repo') ?? ROOM_CONFIGS[0];
 
 const PLAYER_PREFAB_ANIMATION_NAMES: PlayerPrefabAnimationName[] = [
@@ -768,6 +788,7 @@ class MainScene extends Phaser.Scene {
   private repoStateButton?: Phaser.GameObjects.Rectangle;
   private repoSelectedText?: Phaser.GameObjects.Text;
   private currentRepoRoomOption = 'Full';
+  private powerCrystalSprite?: Phaser.GameObjects.Sprite;
   private bgm?: VolumeSound;
   private isBgmMuted = true;
   private isGravityEnabled = true;
@@ -812,6 +833,11 @@ class MainScene extends Phaser.Scene {
     this.load.image('warningSignRock', '/assets/VFX/warningSignRock.png');
     EXPLOSION_FRAME_KEYS.forEach((key, index) => {
       this.load.image(key, `/assets/Sprite/explosion/explosion${index + 1}.png`);
+    });
+    POWER_CRYSTAL_FRAME_KEYS.forEach((key, index) => {
+      const frameNumber = (index + 1).toString().padStart(3, '0');
+
+      this.load.image(key, `/assets/Sprite/Crystal Drain-cached-frames/frame_${frameNumber}.png`);
     });
     ASTEROID_ASSETS.forEach((asset) => {
       this.load.image(asset.key, asset.path);
@@ -906,6 +932,11 @@ class MainScene extends Phaser.Scene {
       .setDisplaySize(SCENE_WIDTH * scale, SCENE_HEIGHT * scale)
       .setVisible(true);
 
+    this.add
+      .image(width / 2, height / 2, POWER_ROOM_CONFIG.defaultTextureKey)
+      .setDisplaySize(SCENE_WIDTH * scale, SCENE_HEIGHT * scale)
+      .setVisible(true);
+
     this.repoOverlay = this.add
       .image(width / 2, height / 2, REPO_ROOM_CONFIG.defaultTextureKey)
       .setDisplaySize(SCENE_WIDTH * scale, SCENE_HEIGHT * scale)
@@ -936,6 +967,18 @@ class MainScene extends Phaser.Scene {
       frames: EXPLOSION_FRAME_KEYS.map((key) => ({ key })),
       frameRate: 16,
       repeat: 0
+    });
+    this.anims.create({
+      key: POWER_CRYSTAL_ANIMATION_KEY,
+      frames: POWER_CRYSTAL_FRAME_KEYS.map((key) => ({ key })),
+      frameRate: 16,
+      repeat: 0
+    });
+    this.powerCrystalSprite = this.add
+      .sprite(POWER_CRYSTAL_X, POWER_CRYSTAL_Y, POWER_CRYSTAL_FRAME_KEYS[0])
+      .setDisplaySize(POWER_CRYSTAL_WIDTH, POWER_CRYSTAL_HEIGHT);
+    this.powerCrystalSprite.on(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
+      this.powerCrystalSprite?.setTexture(POWER_CRYSTAL_FRAME_KEYS[0]);
     });
 
     const collisionOverlay = this.createCollisionDebugOverlay(scale);
@@ -981,7 +1024,7 @@ class MainScene extends Phaser.Scene {
     const panel = this.add.container(16, 16).setScrollFactor(0);
     this.uiPanel = panel;
     const panelBackground = this.add
-      .rectangle(0, 0, 220, 580, 0x0f172a, 0.82)
+      .rectangle(0, 0, 220, 624, 0x0f172a, 0.82)
       .setOrigin(0);
     const playerGroupLabel = this.add.text(14, 16, 'Player', {
       fontFamily: 'Arial, Helvetica, sans-serif',
@@ -1168,6 +1211,21 @@ class MainScene extends Phaser.Scene {
       color: '#ffffff'
     });
 
+    const powerCrystalLabel = this.add.text(14, 576, 'Crystal', {
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: '16px',
+      color: '#ffffff'
+    });
+    const powerCrystalButton = this.add
+      .rectangle(PANEL_CONTROL_X, 571, PANEL_CONTROL_WIDTH, 32, 0x2563eb, 1)
+      .setOrigin(0)
+      .setInteractive({ useHandCursor: true });
+    const powerCrystalText = this.add.text(133, 578, 'Play', {
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: '15px',
+      color: '#ffffff'
+    });
+
     panel.add([
       panelBackground,
       playerGroupLabel,
@@ -1204,7 +1262,10 @@ class MainScene extends Phaser.Scene {
       this.outerRepairText,
       repoLabel,
       this.repoStateButton,
-      this.repoSelectedText
+      this.repoSelectedText,
+      powerCrystalLabel,
+      powerCrystalButton,
+      powerCrystalText
     ]);
 
     selectedBackground.on('pointerdown', () => {
@@ -1213,6 +1274,10 @@ class MainScene extends Phaser.Scene {
 
     this.repoStateButton.on('pointerdown', () => {
       this.setRepoRoomOption(this.currentRepoRoomOption === 'Full' ? 'Empty' : 'Full');
+    });
+
+    powerCrystalButton.on('pointerdown', () => {
+      this.playPowerCrystalAnimation();
     });
 
     animationButton.on('pointerdown', () => {
@@ -1307,6 +1372,15 @@ class MainScene extends Phaser.Scene {
 
     this.isUiPanelVisible = !this.isUiPanelVisible;
     this.uiPanel.setVisible(this.isUiPanelVisible);
+  }
+
+  private playPowerCrystalAnimation() {
+    if (!this.powerCrystalSprite) {
+      return;
+    }
+
+    this.powerCrystalSprite.setTexture(POWER_CRYSTAL_FRAME_KEYS[0]);
+    this.powerCrystalSprite.play(POWER_CRYSTAL_ANIMATION_KEY, true);
   }
 
   update(time: number, delta: number) {
