@@ -946,6 +946,7 @@ class MainScene extends Phaser.Scene {
   private playerVelocityY = 0;
   private playerSwapImpulse: SwapImpulseState = { x: 0, y: 0, remaining: 0 };
   private isSecondPlayerGravityEnabled = false;
+  private isSecondPlayerWhiteCollisionEnabled = true;
   private secondPlayerVelocityY = 0;
   private secondPlayerSwapImpulse: SwapImpulseState = { x: 0, y: 0, remaining: 0 };
   private isPlayerInsideShip = true;
@@ -2099,6 +2100,16 @@ class MainScene extends Phaser.Scene {
     this.updateSecondPlayerInfoUi();
   }
 
+  private setSecondPlayerHandToolByLabel(label: string) {
+    const index = PLAYER_HAND_TOOL_ASSETS.findIndex((asset) => asset.label === label);
+
+    if (index === -1) {
+      return;
+    }
+
+    this.setSecondPlayerHandTool(index);
+  }
+
   private setPlayerHandTool(index: number) {
     if (!this.playerHandToolSprite) {
       return;
@@ -2394,7 +2405,10 @@ class MainScene extends Phaser.Scene {
       this.scale.width - PLAYER_WIDTH / 2
     );
 
-    if (!this.collidesWithMap(nextX, this.secondPlayer.y, this.isSecondPlayerInsideShip)) {
+    if (
+      !this.isSecondPlayerWhiteCollisionEnabled ||
+      !this.collidesWithMap(nextX, this.secondPlayer.y, this.isSecondPlayerInsideShip)
+    ) {
       this.secondPlayer.x = nextX;
     }
 
@@ -2404,7 +2418,10 @@ class MainScene extends Phaser.Scene {
       this.scale.height - PLAYER_HEIGHT / 2
     );
 
-    if (!this.collidesWithMap(this.secondPlayer.x, nextY, this.isSecondPlayerInsideShip)) {
+    if (
+      !this.isSecondPlayerWhiteCollisionEnabled ||
+      !this.collidesWithMap(this.secondPlayer.x, nextY, this.isSecondPlayerInsideShip)
+    ) {
       this.secondPlayer.y = nextY;
     } else if (this.isSecondPlayerGravityEnabled && direction.y > 0) {
       this.secondPlayerVelocityY = 0;
@@ -2511,21 +2528,23 @@ class MainScene extends Phaser.Scene {
       return;
     }
 
-    const isInsideOuterWrongRoom = this.overlapsMask(OUTER_WRONG_MASK_ID, this.secondPlayer.x, this.secondPlayer.y);
-    const nextState: PlayerState = this.isOuterWrong && isInsideOuterWrongRoom ? 'Outer-Repairing' : 'Normal';
+    const context = this.createPlayerStateTransitionContextFor(
+      this.secondPlayer,
+      this.secondPlayerKeys?.UP.isDown === true || this.secondPlayerKeys?.DOWN.isDown === true,
+      this.secondPlayerKeys?.L.isDown === true
+    );
+    const nextState = this.playerStateTransitions[this.secondPlayerState](context);
 
     if (this.secondPlayerState === nextState) {
       return;
     }
 
-    this.secondPlayerState = nextState;
-
-    if (nextState === 'Normal') {
-      this.setSecondPlayerProgress(0);
-    } else {
-      this.updateSecondPlayerProgressBar();
-      this.updateSecondPlayerInfoUi();
+    if (this.secondPlayerState === 'Climbing') {
+      this.liftSecondPlayerOutOfLadder();
     }
+
+    this.secondPlayerState = nextState;
+    this.applySecondPlayerState();
   }
 
   update(time: number, delta: number) {
@@ -2552,7 +2571,10 @@ class MainScene extends Phaser.Scene {
     this.updateOuterRepairProgress(delta);
     this.updateHealing(delta);
     this.updateSecondPlayer(delta);
+    this.updateSecondPlayerRepairProgress(delta);
+    this.updateSecondPlayerRepoProgress(delta);
     this.updateSecondPlayerOuterRepairProgress(delta);
+    this.updateSecondHealing(delta);
     this.updateOuterWrongEntryDetection();
 
     const direction = new Phaser.Math.Vector2(0, 0);
@@ -3492,6 +3514,14 @@ class MainScene extends Phaser.Scene {
     this.setPlayerHealth(this.playerHealth + PLAYER_HEAL_PER_SECOND * (delta / 1000));
   }
 
+  private updateSecondHealing(delta: number) {
+    if (this.secondPlayerState !== 'Healing' || this.secondPlayerHealth >= PLAYER_MAX_HEALTH) {
+      return;
+    }
+
+    this.setSecondPlayerHealth(this.secondPlayerHealth + PLAYER_HEAL_PER_SECOND * (delta / 1000));
+  }
+
   private updatePlayerProgressBar() {
     if (!this.player || !this.playerProgressBar) {
       return;
@@ -3550,6 +3580,24 @@ class MainScene extends Phaser.Scene {
     this.updatePlayerProgressBar();
   }
 
+  private updateSecondPlayerRepairProgress(delta: number) {
+    if (this.secondPlayerState !== 'Driving-Repairing' || !this.secondPlayerKeys?.L.isDown) {
+      return;
+    }
+
+    this.setSecondPlayerProgress(this.secondPlayerProgress + PLAYER_REPAIR_PROGRESS_PER_SECOND * (delta / 1000));
+
+    if (this.secondPlayerProgress < 1) {
+      return;
+    }
+
+    this.setDriveRoomOption('Normal');
+    this.setSecondPlayerProgress(0);
+    this.secondPlayerState = this.overlapsSecondPlayerCurrentDriveRoom() ? 'Driving' : 'Normal';
+    this.applySecondPlayerState();
+    this.updateSecondPlayerProgressBar();
+  }
+
   private updateRepoProgress(delta: number) {
     if (this.playerState !== 'Repoing' || !this.keys?.E.isDown) {
       return;
@@ -3562,6 +3610,20 @@ class MainScene extends Phaser.Scene {
     }
 
     this.acquireFireExtinguisher();
+  }
+
+  private updateSecondPlayerRepoProgress(delta: number) {
+    if (this.secondPlayerState !== 'Repoing' || !this.secondPlayerKeys?.L.isDown) {
+      return;
+    }
+
+    this.setSecondPlayerProgress(this.secondPlayerProgress + PLAYER_REPO_PROGRESS_PER_SECOND * (delta / 1000));
+
+    if (this.secondPlayerProgress < 1) {
+      return;
+    }
+
+    this.acquireSecondPlayerFireExtinguisher();
   }
 
   private updateOuterRepairProgress(delta: number) {
@@ -3596,6 +3658,7 @@ class MainScene extends Phaser.Scene {
     this.setOuterWrong(false);
     this.setSecondPlayerProgress(0);
     this.secondPlayerState = 'Normal';
+    this.applySecondPlayerState();
     this.updateSecondPlayerProgressBar();
     this.updateSecondPlayerInfoUi();
   }
@@ -3615,6 +3678,15 @@ class MainScene extends Phaser.Scene {
     this.playerState = 'Normal';
     this.applyPlayerState();
     this.updatePlayerProgressBar();
+  }
+
+  private acquireSecondPlayerFireExtinguisher() {
+    this.setRepoRoomOption('Empty');
+    this.setSecondPlayerHandToolByLabel('Extinguisher');
+    this.setSecondPlayerProgress(0);
+    this.secondPlayerState = 'Normal';
+    this.applySecondPlayerState();
+    this.updateSecondPlayerProgressBar();
   }
 
   private updateProgressSlider(progress: number) {
@@ -3769,6 +3841,14 @@ class MainScene extends Phaser.Scene {
 
   private isRepoRoomFull() {
     return this.currentRepoRoomOption === 'Full';
+  }
+
+  private overlapsSecondPlayerCurrentDriveRoom() {
+    if (!this.secondPlayer) {
+      return false;
+    }
+
+    return this.overlapsRoom(DRIVE_ROOM_CONFIG, this.secondPlayer.x, this.secondPlayer.y);
   }
 
   private overlapsCurrentDriveRoom() {
@@ -4292,8 +4372,20 @@ class MainScene extends Phaser.Scene {
   }
 
   private createPlayerStateTransitionContext(isVerticalInputPressed: boolean): PlayerStateTransitionContext {
-    const x = this.player?.x ?? 0;
-    const y = this.player?.y ?? 0;
+    return this.createPlayerStateTransitionContextFor(
+      this.player,
+      isVerticalInputPressed,
+      this.keys?.E.isDown === true
+    );
+  }
+
+  private createPlayerStateTransitionContextFor(
+    player: Phaser.GameObjects.Graphics | undefined,
+    isVerticalInputPressed: boolean,
+    isRepairInputPressed: boolean
+  ): PlayerStateTransitionContext {
+    const x = player?.x ?? 0;
+    const y = player?.y ?? 0;
 
     return {
       isTouchingLadder: this.overlapsLadder(x, y),
@@ -4304,7 +4396,7 @@ class MainScene extends Phaser.Scene {
       isVerticalInputPressed,
       isDriveRoomWrong: this.isDriveRoomWrong(),
       isOuterWrong: this.isOuterWrong,
-      isRepairInputPressed: this.keys?.E.isDown === true
+      isRepairInputPressed
     };
   }
 
@@ -4401,6 +4493,23 @@ class MainScene extends Phaser.Scene {
     this.updatePlayerProgressBar();
   }
 
+  private applySecondPlayerState() {
+    if (this.secondPlayerState === 'Climbing') {
+      this.isSecondPlayerGravityEnabled = false;
+      this.isSecondPlayerWhiteCollisionEnabled = false;
+      this.secondPlayerVelocityY = 0;
+      this.updateSecondPlayerProgressBar();
+      this.updateSecondPlayerInfoUi();
+      return;
+    }
+
+    this.isSecondPlayerGravityEnabled = true;
+    this.isSecondPlayerWhiteCollisionEnabled = true;
+    this.secondPlayerVelocityY = 0;
+    this.updateSecondPlayerProgressBar();
+    this.updateSecondPlayerInfoUi();
+  }
+
   private updateGravityUi() {
     if (!this.gravityButton || !this.gravityText) {
       return;
@@ -4426,6 +4535,22 @@ class MainScene extends Phaser.Scene {
         this.player.y = testY;
         this.playerVelocityY = 0;
     // console.log(`Attempting to lift player out of ladder to y=${this.player.y}`)
+        return;
+      }
+    }
+  }
+
+  private liftSecondPlayerOutOfLadder() {
+    if (!this.secondPlayer) {
+      return;
+    }
+
+    for (let lift = 1; lift <= SCENE_HEIGHT; lift += 1) {
+      const testY = this.secondPlayer.y - lift;
+
+      if (!this.collidesWithMap(this.secondPlayer.x, testY, this.isSecondPlayerInsideShip)) {
+        this.secondPlayer.y = testY;
+        this.secondPlayerVelocityY = 0;
         return;
       }
     }
