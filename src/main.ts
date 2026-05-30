@@ -1015,6 +1015,9 @@ class MainScene extends Phaser.Scene {
   private nextAlienSpawnDelay = 0;
   private alienReticle?: Phaser.GameObjects.Image;
   private alienDamageStates = new WeakMap<AlienSprite, boolean>();
+  private metalDebrisCount = 0;
+  private iceCrystalCount = 0;
+  private resourcesText?: Phaser.GameObjects.Text;
   private asteroidSpawnTimer = 0;
   private nextAsteroidSpawnDelay = 0;
   private pixelAsteroidLaneSpawnTimer = 0;
@@ -1357,38 +1360,38 @@ class MainScene extends Phaser.Scene {
     const panel = this.add.container(16, 16).setScrollFactor(0);
     this.uiPanel = panel;
     const panelBackground = this.add
-      .rectangle(0, 0, 220, 540, 0x0f172a, 0.82)
+      .rectangle(0, 0, 220, 604, 0x0f172a, 0.82)
       .setOrigin(0);
     const playerGroupLabel = this.add.text(14, 16, 'Controls', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '18px',
       color: '#93c5fd'
     });
-    const soundLabel = this.add.text(14, 148, 'BGM', {
+    const soundLabel = this.add.text(14, 212, 'BGM', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '16px',
       color: '#ffffff'
     });
     const muteButton = this.add
-      .rectangle(PANEL_CONTROL_X, 143, PANEL_CONTROL_WIDTH, 28, 0x475569, 1)
+      .rectangle(PANEL_CONTROL_X, 207, PANEL_CONTROL_WIDTH, 28, 0x475569, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
-    const muteText = this.add.text(119, 149, 'Muted', {
+    const muteText = this.add.text(119, 213, 'Muted', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '14px',
       color: '#ffffff'
     });
 
-    const collisionLabel = this.add.text(14, 192, 'Collision', {
+    const collisionLabel = this.add.text(14, 256, 'Collision', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '16px',
       color: '#ffffff'
     });
     const collisionButton = this.add
-      .rectangle(PANEL_CONTROL_X, 187, PANEL_CONTROL_WIDTH, 28, 0x475569, 1)
+      .rectangle(PANEL_CONTROL_X, 251, PANEL_CONTROL_WIDTH, 28, 0x475569, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
-    const collisionText = this.add.text(127, 193, 'Hidden', {
+    const collisionText = this.add.text(127, 257, 'Hidden', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '14px',
       color: '#ffffff'
@@ -1438,16 +1441,16 @@ class MainScene extends Phaser.Scene {
       color: '#ffffff'
     });
 
-    const shipFireLabel = this.add.text(14, 236, 'Ship Fire', {
+    const shipFireLabel = this.add.text(14, 300, 'Ship Fire', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '16px',
       color: '#ffffff'
     });
     const shipFireButton = this.add
-      .rectangle(PANEL_CONTROL_X, 231, PANEL_CONTROL_WIDTH, 32, 0x475569, 1)
+      .rectangle(PANEL_CONTROL_X, 295, PANEL_CONTROL_WIDTH, 32, 0x475569, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
-    const shipFireText = this.add.text(127, 238, 'Hidden', {
+    const shipFireText = this.add.text(127, 302, 'Hidden', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#ffffff'
@@ -1477,24 +1480,24 @@ class MainScene extends Phaser.Scene {
     this.input.setDraggable(this.progressSliderHandle);
     this.updateProgressSlider(0);
 
-    const sceneGroupLabel = this.add.text(14, 110, 'Scene', {
+    const sceneGroupLabel = this.add.text(14, 174, 'Scene', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '18px',
       color: '#93c5fd'
     });
 
-    const label = this.add.text(14, 280, DRIVE_ROOM_CONFIG.label, {
+    const label = this.add.text(14, 344, DRIVE_ROOM_CONFIG.label, {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '16px',
       color: '#ffffff'
     });
 
     const selectedBackground = this.add
-      .rectangle(PANEL_CONTROL_X, 275, PANEL_CONTROL_WIDTH, 32, 0x22c55e, 1)
+      .rectangle(PANEL_CONTROL_X, 339, PANEL_CONTROL_WIDTH, 32, 0x22c55e, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
     this.driveStateButton = selectedBackground;
-    const selectedText = this.add.text(104, 282, 'Normal', {
+    const selectedText = this.add.text(104, 346, 'Normal', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#ffffff'
@@ -1513,67 +1516,67 @@ class MainScene extends Phaser.Scene {
     });
     this.updatePlayerCoordinateUi();
 
-    const outerLabel = this.add.text(14, 324, 'Outer', {
+    const outerLabel = this.add.text(14, 388, 'Outer', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '16px',
       color: '#ffffff'
     });
     this.outerRepairButton = this.add
-      .rectangle(PANEL_CONTROL_X, 319, PANEL_CONTROL_WIDTH, 32, 0x475569, 1)
+      .rectangle(PANEL_CONTROL_X, 383, PANEL_CONTROL_WIDTH, 32, 0x475569, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
-    this.outerRepairText = this.add.text(126, 326, 'Normal', {
+    this.outerRepairText = this.add.text(126, 390, 'Normal', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#ffffff'
     });
     this.updateOuterWrongUi();
 
-    const repoLabel = this.add.text(14, 368, REPO_ROOM_CONFIG.label, {
+    const repoLabel = this.add.text(14, 432, REPO_ROOM_CONFIG.label, {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '16px',
       color: '#ffffff'
     });
     this.repoStateButton = this.add
-      .rectangle(PANEL_CONTROL_X, 363, PANEL_CONTROL_WIDTH, 32, 0x22c55e, 1)
+      .rectangle(PANEL_CONTROL_X, 427, PANEL_CONTROL_WIDTH, 32, 0x22c55e, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
-    this.repoSelectedText = this.add.text(126, 370, 'Full', {
+    this.repoSelectedText = this.add.text(126, 434, 'Full', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#ffffff'
     });
 
-    const powerCrystalLabel = this.add.text(14, 412, 'Crystal', {
+    const powerCrystalLabel = this.add.text(14, 476, 'Crystal', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '16px',
       color: '#ffffff'
     });
     const powerCrystalButton = this.add
-      .rectangle(PANEL_CONTROL_X, 407, PANEL_CONTROL_WIDTH, 32, 0x2563eb, 1)
+      .rectangle(PANEL_CONTROL_X, 471, PANEL_CONTROL_WIDTH, 32, 0x2563eb, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
-    const powerCrystalText = this.add.text(133, 414, 'Play', {
+    const powerCrystalText = this.add.text(133, 478, 'Play', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#ffffff'
     });
 
-    const utilityGroupLabel = this.add.text(14, 456, 'Utility', {
+    const utilityGroupLabel = this.add.text(14, 520, 'Utility', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '18px',
       color: '#93c5fd'
     });
-    const screenshotLabel = this.add.text(14, 496, 'Screenshot', {
+    const screenshotLabel = this.add.text(14, 560, 'Screenshot', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#ffffff'
     });
     const screenshotButton = this.add
-      .rectangle(PANEL_CONTROL_X, 491, PANEL_CONTROL_WIDTH, 32, 0x0ea5e9, 1)
+      .rectangle(PANEL_CONTROL_X, 555, PANEL_CONTROL_WIDTH, 32, 0x0ea5e9, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
-    const screenshotText = this.add.text(133, 498, 'Save', {
+    const screenshotText = this.add.text(133, 562, 'Save', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#ffffff'
@@ -1607,6 +1610,19 @@ class MainScene extends Phaser.Scene {
       fontSize: '15px',
       color: '#ffffff'
     });
+
+    const resourcesLabel = this.add.text(14, 98, 'Resources', {
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: '18px',
+      color: '#93c5fd'
+    });
+    this.resourcesText = this.add.text(14, 128, '', {
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: '14px',
+      color: '#ffffff',
+      lineSpacing: 4
+    });
+    this.updateResourcesUi();
 
     const createPlayerInfoPanel = (
       x: number,
@@ -1810,6 +1826,8 @@ class MainScene extends Phaser.Scene {
       teleportLabel,
       this.teleportButton,
       this.teleportText,
+      resourcesLabel,
+      this.resourcesText,
       playerTwoPanelLabel,
       legacySecondPlayerInfoText,
       sceneGroupLabel,
@@ -2891,14 +2909,9 @@ class MainScene extends Phaser.Scene {
         continue;
       }
 
-      if (asteroid.collisionKind && !asteroid.hasTriggeredPlayerCollision && this.overlapsPlayer(asteroid)) {
+      if (asteroid.collisionKind && !asteroid.hasTriggeredPlayerCollision && this.overlapsAnyPlayer(asteroid)) {
         asteroid.hasTriggeredPlayerCollision = true;
-
-        if (asteroid.collisionKind === 'metalDebris') {
-          this.onMetalDebrisHitPlayer();
-        } else {
-          this.onIceCrystalHitPlayer();
-        }
+        this.onResourceAsteroidHitPlayer(asteroid.collisionKind);
       }
 
       if (asteroid.x + asteroid.displayWidth / 2 >= -40) {
@@ -3004,15 +3017,19 @@ class MainScene extends Phaser.Scene {
     return asteroid;
   }
 
-  private overlapsPlayer(asteroid: AsteroidSprite) {
-    if (!this.player) {
+  private overlapsAnyPlayer(asteroid: AsteroidSprite) {
+    return this.overlapsPlayerBody(asteroid, this.player) || this.overlapsPlayerBody(asteroid, this.secondPlayer);
+  }
+
+  private overlapsPlayerBody(asteroid: AsteroidSprite, player?: Phaser.GameObjects.Graphics) {
+    if (!player) {
       return false;
     }
 
-    const playerLeft = this.player.x - PLAYER_WIDTH / 2;
-    const playerRight = this.player.x + PLAYER_WIDTH / 2;
-    const playerTop = this.player.y - PLAYER_HEIGHT / 2;
-    const playerBottom = this.player.y + PLAYER_HEIGHT / 2;
+    const playerLeft = player.x - PLAYER_WIDTH / 2;
+    const playerRight = player.x + PLAYER_WIDTH / 2;
+    const playerTop = player.y - PLAYER_HEIGHT / 2;
+    const playerBottom = player.y + PLAYER_HEIGHT / 2;
     const asteroidLeft = asteroid.x - asteroid.displayWidth / 2;
     const asteroidRight = asteroid.x + asteroid.displayWidth / 2;
     const asteroidTop = asteroid.y - asteroid.displayHeight / 2;
@@ -3107,6 +3124,23 @@ class MainScene extends Phaser.Scene {
   private onIceCrystalHitPlayer() {
     this.collectResource('iceCrystal');
     this.damagePlayer(7);
+  }
+  
+  private onResourceAsteroidHitPlayer(collisionKind: AsteroidCollisionKind) {
+    const resourceName = collisionKind === 'metalDebris' ? '金属碎片' : '冰晶';
+
+    if (collisionKind === 'metalDebris') {
+      this.metalDebrisCount += 1;
+    } else {
+      this.iceCrystalCount += 1;
+    }
+
+    console.log(`获取到${resourceName}资源`);
+    this.updateResourcesUi();
+  }
+
+  private updateResourcesUi() {
+    this.resourcesText?.setText(`金属碎片: ${this.metalDebrisCount}\n冰晶: ${this.iceCrystalCount}`);
   }
 
   private onPixelAsteroidLaneReachedTriggerX(x: number, y: number) {

@@ -127,9 +127,13 @@ this.load.image('background', '/assets/scene/spaceShip.png');
 下方特殊素材规则：
 
 - `金属碎片.png` 与 `冰晶.png` 固定 `alpha = 1`，不使用随机透明度。
-- `金属碎片.png` 与玩家碰撞时调用空函数 `onMetalDebrisHitPlayer()`。
-- `冰晶.png` 与玩家碰撞时调用空函数 `onIceCrystalHitPlayer()`。
-- 每个特殊陨石对象对玩家碰撞只触发一次。
+- `金属碎片.png` 与 `冰晶.png` 不阻挡玩家移动，只做非阻挡资源碰撞检测。
+- Player1 或 Player2 碰到特殊陨石都会触发资源获取逻辑。
+- `金属碎片.png` 命中时输出 `获取到金属碎片资源`。
+- `冰晶.png` 命中时输出 `获取到冰晶资源`。
+- 全局资源数量由 `metalDebrisCount` 和 `iceCrystalCount` 记录，命中对应资源后数量加 1。
+- 左上角 Controls 面板中的 `Resources` 区域会显示当前 `金属碎片` 和 `冰晶` 数量。
+- 每个特殊陨石对象对玩家碰撞只触发一次，触发后通过 `hasTriggeredPlayerCollision` 防止重复输出。
 
 ### Alien 追踪敌人
 
@@ -418,6 +422,8 @@ prefab 视觉层维护独立动画状态机，默认状态为 `Idle`。动画状
 原调试面板中的玩家控制项仅保留：
 
 - `Teleport`：让两个玩家瞬移并互相交换当前位置，同时交换重力状态和飞船内外状态。
+
+原调试面板中的 `Resources` 区域显示全局资源数量：`金属碎片` 和 `冰晶`。
 
 `Scene` 分组包含：
 
