@@ -22,6 +22,7 @@ const PLAYER_PROGRESS_OFFSET_Y = -PLAYER_HEIGHT / 2 - 16;
 const PLAYER_PROGRESS_RADIUS = 14;
 const PLAYER_PROGRESS_LINE_WIDTH = 4;
 const PLAYER_REPAIR_PROGRESS_PER_SECOND = 0.2;
+const PLAYER_REPO_PROGRESS_PER_SECOND = 0.5;
 const PLAYER_PREFAB_CHARACTER_SCALE = 2.0872;
 const PLAYER_PREFAB_PIXELS_PER_UNIT = 30;
 const PLAYER_PREFAB_ROOT_OFFSET_Y = PLAYER_HEIGHT / 2 - 8;
@@ -127,7 +128,19 @@ type AsteroidAsset = {
   collisionKind?: AsteroidCollisionKind;
 };
 
-type PlayerState = 'Normal' | 'Climbing' | 'Healing' | 'Driving' | 'Driving-Repairing';
+type PlayerState = 'Normal' | 'Climbing' | 'Healing' | 'Driving' | 'Driving-Repairing' | 'Repoing';
+
+type PlayerStateTransitionContext = {
+  isTouchingLadder: boolean;
+  isInsideHealRoom: boolean;
+  isInsideDriveRoom: boolean;
+  isInsideRepoFullRoom: boolean;
+  isVerticalInputPressed: boolean;
+  isDriveRoomWrong: boolean;
+  isRepairInputPressed: boolean;
+};
+
+type PlayerStateTransition = (context: PlayerStateTransitionContext) => PlayerState;
 
 type RoomLayerOption = {
   label: string;
@@ -804,6 +817,62 @@ class MainScene extends Phaser.Scene {
   private isGravityEnabled = true;
   private playerVelocityY = 0;
   private playerState: PlayerState = 'Normal';
+  private readonly playerStateTransitions: Record<PlayerState, PlayerStateTransition> = {
+    Normal: (context) => {
+      if (context.isInsideHealRoom) {
+        return 'Healing';
+      }
+
+      if (context.isTouchingLadder && context.isVerticalInputPressed) {
+        return 'Climbing';
+      }
+
+      if (context.isInsideDriveRoom) {
+        return 'Driving';
+      }
+
+      if (context.isInsideRepoFullRoom) {
+        return 'Repoing';
+      }
+
+      return 'Normal';
+    },
+    Climbing: (context) => {
+      if (context.isTouchingLadder) {
+        return 'Climbing';
+      }
+
+      return 'Normal';
+    },
+    Healing: (context) => context.isInsideHealRoom ? 'Healing' : 'Normal',
+    Driving: (context) => {
+      if (context.isTouchingLadder && context.isVerticalInputPressed) {
+        return 'Climbing';
+      }
+
+      if (context.isInsideDriveRoom && context.isDriveRoomWrong && context.isRepairInputPressed) {
+        return 'Driving-Repairing';
+      }
+
+      if (context.isInsideDriveRoom) {
+        return 'Driving';
+      }
+
+      return 'Normal';
+    },
+    'Driving-Repairing': (context) => {
+      if (context.isTouchingLadder && context.isVerticalInputPressed) {
+        return 'Climbing';
+      }
+
+      if (context.isInsideDriveRoom) {
+        return 'Driving-Repairing';
+      }
+
+      return 'Normal';
+    },
+    Repoing: (context) => context.isInsideRepoFullRoom ? 'Repoing' : 'Normal'
+  };
   private isWhiteCollisionEnabled = true;
   private isCollisionDebugVisible = false;
   private collisionBodyDebug?: Phaser.GameObjects.Graphics;
@@ -1455,6 +1524,7 @@ class MainScene extends Phaser.Scene {
     this.updatePlayerPrefabAnimation(delta);
     this.updatePlayerState(this.keys.W.isDown || this.keys.S.isDown);
     this.updateRepairProgress(delta);
+    this.updateRepoProgress(delta);
     this.updateHealing(delta);
 
     const direction = new Phaser.Math.Vector2(0, 0);
@@ -1969,6 +2039,28 @@ class MainScene extends Phaser.Scene {
     this.updatePlayerProgressBar();
   }
 
+  private updateRepoProgress(delta: number) {
+    if (this.playerState !== 'Repoing' || !this.keys?.E.isDown) {
+      return;
+    }
+
+    this.setPlayerProgress(this.playerProgress + PLAYER_REPO_PROGRESS_PER_SECOND * (delta / 1000));
+
+    if (this.playerProgress < 1) {
+      return;
+    }
+
+    this.acquireFireExtinguisher();
+  }
+
+  private acquireFireExtinguisher() {
+    this.setRepoRoomOption('Empty');
+    this.setPlayerProgress(0);
+    this.playerState = 'Normal';
+    this.applyPlayerState();
+    this.updatePlayerProgressBar();
+  }
+
   private updateProgressSlider(progress: number) {
     if (!this.progressSliderFill || !this.progressSliderHandle || !this.progressSliderText) {
       return;
@@ -2065,11 +2157,15 @@ class MainScene extends Phaser.Scene {
   }
 
   private isRepairingState(state: PlayerState) {
-    return state.endsWith('-Repairing');
+    return state.endsWith('-Repairing') || state === 'Repoing';
   }
 
   private isDriveRoomWrong() {
     return this.currentDriveRoomOption === 'Wrong';
+  }
+
+  private isRepoRoomFull() {
+    return this.currentRepoRoomOption === 'Full';
   }
 
   private overlapsCurrentDriveRoom() {
@@ -2464,23 +2560,33 @@ class MainScene extends Phaser.Scene {
       return;
     }
 
-    const isTouchingLadder = this.overlapsLadder(this.player.x, this.player.y);
-    const isInsideHealRoom = this.overlapsRoom(HEAL_ROOM_CONFIG, this.player.x, this.player.y);
-    const isInsideDriveRoom = this.overlapsRoom(DRIVE_ROOM_CONFIG, this.player.x, this.player.y);
-    const nextState: PlayerState =
-      this.playerState === 'Healing' && !isInsideHealRoom ? 'Normal' :
-      (this.playerState === 'Healing' || this.playerState === 'Normal' || this.playerState === 'Climbing') && isInsideHealRoom ? 'Healing' :
-      this.playerState === 'Climbing' && isTouchingLadder ? 'Climbing' :
-      isTouchingLadder && isVerticalInputPressed ? 'Climbing' :
-      this.playerState === 'Driving-Repairing' && isInsideDriveRoom ? 'Driving-Repairing' :
-      this.playerState === 'Driving' && isInsideDriveRoom && this.isDriveRoomWrong() && this.keys?.E.isDown ? 'Driving-Repairing' :
-      isInsideDriveRoom ? 'Driving' : 'Normal';
+    const context = this.createPlayerStateTransitionContext(isVerticalInputPressed);
+    const nextState = this.playerStateTransitions[this.playerState](context);
 
+    this.transitionPlayerState(nextState);
+  }
+
+  private createPlayerStateTransitionContext(isVerticalInputPressed: boolean): PlayerStateTransitionContext {
+    const x = this.player?.x ?? 0;
+    const y = this.player?.y ?? 0;
+
+    return {
+      isTouchingLadder: this.overlapsLadder(x, y),
+      isInsideHealRoom: this.overlapsRoom(HEAL_ROOM_CONFIG, x, y),
+      isInsideDriveRoom: this.overlapsRoom(DRIVE_ROOM_CONFIG, x, y),
+      isInsideRepoFullRoom: this.isRepoRoomFull() && this.overlapsRoom(REPO_ROOM_CONFIG, x, y),
+      isVerticalInputPressed,
+      isDriveRoomWrong: this.isDriveRoomWrong(),
+      isRepairInputPressed: this.keys?.E.isDown === true
+    };
+  }
+
+  private transitionPlayerState(nextState: PlayerState) {
     if (nextState === this.playerState) {
       return;
     }
 
-    if(this.playerState==='Climbing' ){
+    if (this.playerState === 'Climbing') {
       this.liftPlayerOutOfLadder();
     }
 
@@ -2533,6 +2639,17 @@ class MainScene extends Phaser.Scene {
       this.updateGravityUi();
       this.stateText.setText('Driving-Repairing');
       this.stateText.setColor('#86efac');
+      this.updatePlayerProgressBar();
+      return;
+    }
+
+    if (this.playerState === 'Repoing') {
+      this.isGravityEnabled = true;
+      this.isWhiteCollisionEnabled = true;
+      this.playerVelocityY = 0;
+      this.updateGravityUi();
+      this.stateText.setText('Repoing');
+      this.stateText.setColor('#facc15');
       this.updatePlayerProgressBar();
       return;
     }

@@ -182,13 +182,14 @@ ladderData[index] = r === 255 && g === 0 && b === 0 ? 1 : 0;
 
 ### 玩家状态机
 
-当前玩家状态有五个：
+当前玩家状态有六个：
 
 - `Normal`
 - `Climbing`
 - `Healing`
 - `Driving`
 - `Driving-Repairing`
+- `Repoing`
 
 当前 `updatePlayerState()` 的状态转换：
 
@@ -210,6 +211,10 @@ stateDiagram-v2
     Climbing --> Driving: !overlapsLadder && overlapsDriveRoom
     DrivingRepairing --> DrivingRepairing: overlapsDriveRoom
 
+    Normal --> Repoing: repoFull && overlapsRepoRoom
+    Repoing --> Repoing: repoFull && overlapsRepoRoom
+    Repoing --> Normal: !repoFull || !overlapsRepoRoom
+
     Driving --> DrivingRepairing: overlapsDriveRoom && driveWrong && E
     DrivingRepairing --> Driving: repairComplete && overlapsDriveRoom
 
@@ -219,6 +224,8 @@ stateDiagram-v2
 
     state "Driving-Repairing" as DrivingRepairing
 ```
+
+代码实现上，状态转换已拆成显式状态机：`playerStateTransitions` 按当前 `PlayerState` 分发到对应 transition handler，`createPlayerStateTransitionContext(...)` 统一采集梯子、房间、RepoFull、维修输入等条件，`transitionPlayerState(...)` 负责执行离开旧状态和应用新状态。
 
 `Normal` 状态规则：
 
@@ -254,6 +261,14 @@ stateDiagram-v2
 - 按住 `E` 会以每秒 20% 的速度增加维修进度。
 - 维修进度满时，进度归零并隐藏，Drive 房间状态从 `Wrong` 切回 `Normal`。
 
+`Repoing` 状态规则：
+
+- 玩家处于 `Normal` 且 Repo 房间处于 `Full` 时，进入 Repo 房间 alpha mask 区域会切换到该状态。
+- 玩家保持在 `RepoFull` 区域内时持续 `Repoing`。
+- 玩家进度条在该状态下显示，按住 `E` 会以每秒 50% 的速度增加进度。
+- 进度满时执行“获取灭火器”行为：调用 `acquireFireExtinguisher()`，将 Repo 切换为 `Empty`，玩家状态切回 `Normal`，进度归零并隐藏进度条。
+- 玩家离开 Repo 房间，或 Repo UI 切换到 `Empty` 后，切回 `Normal`。
+
 其他状态相关规则：
 
 - `isOuterWrong` 记录飞船外部是否损坏。上层陨石触发爆炸后会设置为 `true`，并显示 `OuterWrong.png`。
@@ -279,8 +294,9 @@ UI 中的 `Player State` 会显示当前状态。
 玩家右上角有圆形维修进度条：
 
 - 默认隐藏。
-- 进入 `*-Repairing` 状态时显示。
+- 进入 `*-Repairing` 或 `Repoing` 状态时显示。
 - 当前 `Driving-Repairing` 中按住 `E` 以每秒 `20%` 增加。
+- 当前 `Repoing` 中按住 `E` 以每秒 `50%` 增加。
 
 视觉层来源于 Unity 的 `Player.prefab`，当前复刻了可见部件，包括身体、头、头发、眼睛、胸甲、盾牌、弓和箭矢等。角色默认朝右，水平移动时会根据 `A` / `D` 输入翻转视觉层；该翻转只影响显示，不影响碰撞体和物理逻辑。
 
