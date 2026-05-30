@@ -106,7 +106,7 @@ this.load.image('background', '/assets/scene/spaceShip.png');
 - `Tube`：使用 `Tube.png`，当前只作为房间图层显示。
 - `Power`：使用 `Power.png`，当前只作为房间图层显示。
 - `Repo`：右下角房间，包含 `Full` 和 `Empty` 两种状态，默认显示 `RepoFull.png`，UI 按钮可切换为 `RepoEmpty.png`。
-- `OuterWrong`：使用 `OuterWrong.png`，不是 `ROOM_CONFIGS` 房间，使用 `isOuterWrong` 变量记录状态。上层陨石命中飞船后显示，UI 的 `Outer` 按钮可修复并隐藏。
+- `OuterWrong`：使用 `OuterWrong.png`，不是 `ROOM_CONFIGS` 房间，使用 `isOuterWrong` 变量记录状态。上层陨石命中飞船后显示，UI 的 `Outer` 按钮可修复并隐藏。运行时会额外为 `OuterWrong.png` 生成 alpha mask，用于检测玩家进入该区域。
 
 ### 陨石与特效
 
@@ -161,13 +161,13 @@ Alien 生成时会锁定“当时处于飞船外部的玩家”作为目标，�
 - Alien 的正常追踪移动和击退移动都会使用飞船外部碰撞层 `physicOut.png`，语义与飞船外部玩家一致，只采样白色 `#FFFFFF` 作为阻挡。
 - Alien 从屏幕外生成进入画面时允许先越过场景边界；进入场景后再按 `physicOut.png` 阻挡。
 - 接触锁定目标时，如果本次接触尚未造成过伤害，则调用 `damageAlienTarget(...)`。
-- 如果锁定目标是 Player1，`damageAlienTarget(...)` 会调用 `damagePlayer(25)`；如果锁定目标是 Player2，当前调用空函数 `onSecondPlayerAlienContact(...)` 预留 Player2 受击逻辑。
+- 如果锁定目标是 Player1，`damageAlienTarget(...)` 会调用 `damagePlayer(25)`；如果锁定目标是 Player2，会通过 `onSecondPlayerAlienContact(...)` 调用 Player2 的扣血逻辑。
 - 接触后 alien 会进入 `repelledByHit` 击退状态，沿远离锁定目标的方向被推出；击退速度每帧乘以 `0.9` 衰减。
 - 击退速度低于 `20` 后退出击退状态，恢复追踪。
 - 玩家和 alien 分离后，`alienDamageStates` 会重置为 `false`，下次接触可以再次造成伤害。
 - Alien 离开屏幕外边距后会被销毁，并重置下一次生成计时。
 
-`damagePlayer(...)` 当前只影响 Player1：扣除生命值、刷新生命条，并在生命值小于等于 0 时改变隐藏逻辑胶囊体颜色。Player2 的 alien 接触伤害入口暂时是空函数。
+`damagePlayer(...)` 当前影响 Player1：扣除生命值、刷新生命条，并在生命值小于等于 0 时改变隐藏逻辑胶囊体颜色。Player2 使用独立的 `secondPlayerHealth` 和生命条，alien 接触 Player2 时会扣除 Player2 生命值并刷新 Player2 生命条。
 
 ## 物理系统
 
@@ -200,7 +200,7 @@ const COLLISION_ALPHA_THRESHOLD = 16;
 
 运行时也会把 `physicOut.png` 拆成 `outsideCollisionData`，只采样 `#FFFFFF` 像素作为飞船外部实体阻挡。
 
-房间 alpha mask 会额外生成到 `roomMasks` 中。它们只用于房间状态检测，例如 Drive、Heal、LeftUpRoom、Workshop、Living、Plant、Tube、Power、Repo 的进入区域判断，不会参与 `collidesWithMap(...)` 的阻挡逻辑。
+房间 alpha mask 会额外生成到 `roomMasks` 中。它们只用于房间状态检测，例如 Drive、Heal、LeftUpRoom、Workshop、Living、Plant、Tube、Power、Repo 的进入区域判断，不会参与 `collidesWithMap(...)` 的阻挡逻辑。`OuterWrong.png` 也会以 `outerWrong` mask 形式写入 `roomMasks`，用于进入检测。
 
 核心语义等价于：
 
@@ -227,7 +227,7 @@ ladderData[index] = r === 255 && g === 0 && b === 0 ? 1 : 0;
 
 ### 玩家状态机
 
-当前玩家状态有六个：
+当前玩家状态有七个：
 
 - `Normal`
 - `Climbing`
@@ -235,6 +235,7 @@ ladderData[index] = r === 255 && g === 0 && b === 0 ? 1 : 0;
 - `Driving`
 - `Driving-Repairing`
 - `Repoing`
+- `Outer-Repairing`
 
 当前 `updatePlayerState()` 的状态转换：
 
@@ -260,17 +261,24 @@ stateDiagram-v2
     Repoing --> Repoing: repoFull && overlapsRepoRoom
     Repoing --> Normal: !repoFull || !overlapsRepoRoom
 
+    Normal --> OuterRepairing: outerWrong && overlapsOuterWrong
+    OuterRepairing --> OuterRepairing: outerWrong && overlapsOuterWrong
+    OuterRepairing --> Normal: !outerWrong || !overlapsOuterWrong
+
     Driving --> DrivingRepairing: overlapsDriveRoom && driveWrong && E
     DrivingRepairing --> Driving: repairComplete && overlapsDriveRoom
+
+    OuterRepairing --> Normal: repairComplete
 
     Climbing --> Normal: !overlapsLadder && !overlapsDriveRoom
     Driving --> Normal: !overlapsDriveRoom
     DrivingRepairing --> Normal: !overlapsDriveRoom
 
     state "Driving-Repairing" as DrivingRepairing
+    state "Outer-Repairing" as OuterRepairing
 ```
 
-代码实现上，状态转换已拆成显式状态机：`playerStateTransitions` 按当前 `PlayerState` 分发到对应 transition handler，`createPlayerStateTransitionContext(...)` 统一采集梯子、房间、RepoFull、维修输入等条件，`transitionPlayerState(...)` 负责执行离开旧状态和应用新状态。
+代码实现上，状态转换已拆成显式状态机：`playerStateTransitions` 按当前 `PlayerState` 分发到对应 transition handler，`createPlayerStateTransitionContext(...)` 统一采集梯子、房间、RepoFull、OuterWrong、维修输入等条件，`transitionPlayerState(...)` 负责执行离开旧状态和应用新状态。
 
 `Normal` 状态规则：
 
@@ -314,10 +322,21 @@ stateDiagram-v2
 - 进度满时执行“获取灭火器”行为：调用 `acquireFireExtinguisher()`，将 Repo 切换为 `Empty`，玩家手持装备切换为 `Extinguisher`，玩家状态切回 `Normal`，进度归零并隐藏进度条。
 - 玩家离开 Repo 房间，或 Repo UI 切换到 `Empty` 后，切回 `Normal`。
 
+`Outer-Repairing` 状态规则：
+
+- Player1 或 Player2 处于 `Normal`，`isOuterWrong === true`，且进入 `OuterWrong.png` alpha mask 区域时切换到该状态。
+- 玩家保持在损坏的 OuterWrong 区域内时持续 `Outer-Repairing`。
+- 玩家圆形进度条在该状态下显示，修理速度为每秒 `10%`，不需要按住互动键。
+- Player1 使用 `playerProgress`，Player2 使用 `secondPlayerProgress`；除此之外 Outer 修理进度逻辑一致。
+- Player1 修理完成时调用 `repairOuterFromPlayer()`，Player2 修理完成时调用 `repairOuterFromSecondPlayer()`，内部都复用 `setOuterWrong(false)`，效果与 UI 中 `Outer` 的 `Repair` 按钮一致：隐藏 `OuterWrong.png`，UI 切回 `Normal`，玩家状态切回 `Normal`，进度归零并隐藏进度条。
+- 玩家离开 OuterWrong 区域，或 Outer 已被修复后，切回 `Normal`。
+
 其他状态相关规则：
 
 - `isOuterWrong` 记录飞船外部是否损坏。上层陨石触发爆炸后会设置为 `true`，并显示 `OuterWrong.png`。
 - UI 中的 `Outer` 按钮在 `isOuterWrong === true` 时显示为红色 `Repair`，点击后设置为 `false` 并隐藏 `OuterWrong.png`。
+- Outer 损坏时会显示雪花噪音覆盖层。雪花噪音图层创建是幂等的：如果 `snowNoiseBaseLayer` 和 `snowNoiseOverlay` 已存在，就不会再次创建；如果 `isOuterWrong` 已经是 `true`，重复破坏不会再次触发噪音显示逻辑，避免图层叠加。
+- Player1 或 Player2 第一次进入 `OuterWrong.png` alpha mask 区域时会分别输出 `Player1进入OuterWrong区域` 或 `Player2进入OuterWrong区域`，离开后再次进入会再次触发。
 - Drive 的 UI 控件现在是按钮，不是下拉菜单。点击按钮在 `Normal` 和 `Wrong` 之间切换。
 - Repo 的 UI 控件是按钮，点击按钮在 `Full` 和 `Empty` 之间切换。
 
@@ -330,11 +349,15 @@ UI 中的 `Player State` 会显示当前状态。
 - 隐藏胶囊体：`Phaser.GameObjects.Graphics`，只作为移动、碰撞、梯子检测和状态机坐标锚点。
 - prefab 视觉层：由 `assets/player-prefab/` 下的多张 PNG 组合成分层角色，跟随隐藏胶囊体坐标移动。
 
-玩家上方有生命条：
+两名玩家上方都有生命条：
 
 - 默认生命值为 `100`。
 - 生命值上限为 `100`。
 - `Healing` 状态下以 `15/s` 回复。
+- Player1 使用 `playerHealth` 和 `playerHealthBar`。
+- Player2 使用 `secondPlayerHealth` 和 `secondPlayerHealthBar`。
+- 两名玩家都会根据自身血量降低移动速度：速度倍率为 `1 - missingHealth / 200`，并限制在 `55%~100%`。
+- Player1 使用 `getPlayerHealthSpeedMultiplier()`，Player2 使用 `getSecondPlayerHealthSpeedMultiplier()`。
 
 玩家右上角有圆形维修进度条：
 
@@ -358,7 +381,7 @@ UI 中的 `Player State` 会显示当前状态。
 - 各自有飞船内/外状态：`isPlayerInsideShip`、`isSecondPlayerInsideShip`。
 - 各自有重力状态和垂直速度：`isGravityEnabled` / `playerVelocityY`，`isSecondPlayerGravityEnabled` / `secondPlayerVelocityY`。
 - 各自有可交互 UI panel，包含 `Animation` 按钮、`Progress` slider 和 `Hand Tool` 按钮。
-- `Player1` 的 `Progress` 会参与真实维修/Repo 逻辑；`Player2` 的 `Progress` 当前只驱动自己的世界进度条显示。
+- `Player1` 的 `Progress` 会参与真实维修/Repo/Outer 修理逻辑；`Player2` 的 `Progress` 会参与自己的 Outer 修理逻辑，也可通过 UI slider 独立调整显示值。
 - `Player1` 和 `Player2` 都可以切换 prefab 动画和手持装备；这些视觉状态彼此独立。
 
 移动和碰撞：
@@ -367,7 +390,7 @@ UI 中的 `Player State` 会显示当前状态。
 - 两名玩家都按 X/Y 分轴移动并采样对应物理图。
 - 处于飞船内部的玩家使用 `physic.png`，处于飞船外部的玩家使用 `physicOut.png`。
 - `physicOut.png` 当前只采样白色 `#FFFFFF` 作为外部阻挡。
-- `Player1` 在飞船内部仍可进入房间状态机；`Player2` 当前不参与房间状态机。
+- `Player1` 在飞船内部仍可进入房间状态机；`Player2` 当前不参与普通房间状态机，但会参与 OuterWrong 区域的 `Outer-Repairing` 修理状态。
 
 Swap 机制：
 
@@ -417,7 +440,7 @@ prefab 视觉层维护独立动画状态机，默认状态为 `Idle`。动画状
 
 左上角原调试面板右侧新增两个独立玩家 panel：`Player1` 和 `Player2`。两个玩家 panel 使用相同字段结构，显示 `Position`、飞船内外状态、重力状态和状态文本；`Animation`、`Progress` 和 `Hand Tool` 都是可交互控件，并会作用到各自玩家的真实视觉或进度条。
 
-右下角固定显示键盘按键样式的双玩家操作说明：P1 使用 `WASD` 移动、`E` 互动；P2 使用方向键移动、`L` 互动。
+右下角固定显示表格形式的双玩家操作说明，列为 `Player`、`移动`、`互动`：P1 使用 `WASD` 移动、`E` 互动；P2 使用方向键移动、`L` 互动。
 
 原调试面板中的玩家控制项仅保留：
 
