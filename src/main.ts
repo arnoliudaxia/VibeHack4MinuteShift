@@ -39,6 +39,15 @@ const SECOND_CLOCK_OFFSET_X = 174;
 const SECOND_CLOCK_OFFSET_Y = 40;
 const SECOND_CLOCK_RADIUS = 24;
 
+// VFX
+const DRIVE_WARNING_SIGN_X = 1200;
+const DRIVE_WARNING_SIGN_Y = 300;
+const DRIVE_WARNING_SIGN_SIZE = 72;
+const ROCK_WARNING_SIGN_SIZE = 72;
+const ROCK_WARNING_SIGN_X = 1672-ROCK_WARNING_SIGN_SIZE;
+const ROCK_WARNING_SIGN_Y = 140;
+const WARNING_SIGN_BLINK_SPEED = 5;
+
 // 陨石设置
 const ASTEROID_MIN_SPAWN_DELAY = 300;
 const ASTEROID_MAX_SPAWN_DELAY = 1600;
@@ -667,6 +676,9 @@ class MainScene extends Phaser.Scene {
   private playerPrefabAnimationTime = 0;
   private keys?: PlayerKeys;
   private driveOverlay?: Phaser.GameObjects.Image;
+  private driveWarningSign?: Phaser.GameObjects.Image;
+  private rockWarningSign?: Phaser.GameObjects.Image;
+  private driveWarningBlinkTime = 0;
   private driveSelectedText?: Phaser.GameObjects.Text;
   private currentDriveRoomOption = 'Normal';
   private bgm?: VolumeSound;
@@ -696,10 +708,14 @@ class MainScene extends Phaser.Scene {
   }
 
   preload() {
-    this.load.image('space', '/assets/scene/space.png');
+    this.load.image('spaceBg1', '/assets/scene/spaceBg/星空1.png');
+    this.load.image('spaceBg2', '/assets/scene/spaceBg/星空2.png');
+    this.load.image('spaceE', '/assets/scene/spaceBg/spaceE.png');
     this.load.image('spaceShipFire', '/assets/scene/spaceShipFire.png');
     this.load.image('background', '/assets/scene/spaceShip.png');
     this.load.image('collision', '/assets/scene/physic.png');
+    this.load.image('warningSign', '/assets/VFX/warningSign.png');
+    this.load.image('warningSignRock', '/assets/VFX/warningSignRock.png');
     ASTEROID_ASSETS.forEach((asset) => {
       this.load.image(asset.key, asset.path);
     });
@@ -730,9 +746,22 @@ class MainScene extends Phaser.Scene {
     this.gameStartTime = this.time.now;
     this.displayedGameSeconds = -1;
 
-    const space = this.add.image(width / 2, height / 2, 'space');
-    const spaceScale = Math.max(width / space.width, height / space.height);
-    space.setScale(spaceScale).setScrollFactor(0);
+    const spaceBg2 = this.add.image(width / 2, height / 2, 'spaceBg2');
+    const spaceBg2Scale = Math.max(width / spaceBg2.width, height / spaceBg2.height);
+    spaceBg2.setScale(spaceBg2Scale).setScrollFactor(0);
+    const spaceBg1 = this.add.image(width / 2, height / 2, 'spaceBg1');
+    const spaceBg1Scale = Math.max(width / spaceBg1.width, height / spaceBg1.height);
+    spaceBg1.setScale(spaceBg1Scale).setScrollFactor(0).setVisible(false);
+    this.time.addEvent({
+      delay: 1500,
+      loop: true,
+      callback: () => {
+        spaceBg1.setVisible(!spaceBg1.visible);
+      }
+    });
+    const spaceE = this.add.image(width / 2, height / 2, 'spaceE');
+    const spaceEScale = Math.max(width / spaceE.width, height / spaceE.height);
+    spaceE.setScale(spaceEScale).setScrollFactor(0);
     this.nextAsteroidSpawnDelay = Phaser.Math.Between(ASTEROID_MIN_SPAWN_DELAY, ASTEROID_MAX_SPAWN_DELAY);
 
     const spaceShipFire = this.add.image(width / 2, height / 2, 'spaceShipFire');
@@ -758,6 +787,14 @@ class MainScene extends Phaser.Scene {
       .setDisplaySize(SCENE_WIDTH * scale, SCENE_HEIGHT * scale)
       .setVisible(true);
     this.driveOverlay = driveOverlay;
+    this.driveWarningSign = this.add
+      .image(DRIVE_WARNING_SIGN_X, DRIVE_WARNING_SIGN_Y, 'warningSign')
+      .setDisplaySize(DRIVE_WARNING_SIGN_SIZE, DRIVE_WARNING_SIGN_SIZE)
+      .setVisible(false);
+    this.rockWarningSign = this.add
+      .image(ROCK_WARNING_SIGN_X, ROCK_WARNING_SIGN_Y, 'warningSignRock')
+      .setDisplaySize(ROCK_WARNING_SIGN_SIZE*2, ROCK_WARNING_SIGN_SIZE)
+      .setVisible(true);
 
     this.createCollisionMask();
     this.createRoomMasks();
@@ -1072,6 +1109,7 @@ class MainScene extends Phaser.Scene {
 
   update(time: number, delta: number) {
     this.updateAsteroids(delta);
+    this.updateDriveWarningSign(delta);
 
     if (!this.player || !this.keys) {
       return;
@@ -1432,6 +1470,7 @@ class MainScene extends Phaser.Scene {
 
     this.currentDriveRoomOption = option.label;
     this.driveSelectedText.setText(option.label);
+    this.updateDriveWarningSignVisibility();
 
     if (!option.textureKey) {
       this.driveOverlay.setVisible(false);
@@ -1439,6 +1478,36 @@ class MainScene extends Phaser.Scene {
     }
 
     this.driveOverlay.setTexture(option.textureKey).setVisible(true);
+  }
+
+  private updateDriveWarningSignVisibility() {
+    if (!this.driveWarningSign) {
+      return;
+    }
+
+    const isVisible = this.isDriveRoomWrong();
+
+    this.driveWarningBlinkTime = 0;
+    this.driveWarningSign.setVisible(isVisible).setAlpha(isVisible ? 1 : 0);
+  }
+
+  private updateDriveWarningSign(delta: number) {
+    if (!this.driveWarningSign?.visible && !this.rockWarningSign?.visible) {
+      return;
+    }
+
+    this.driveWarningBlinkTime += delta / 1000;
+
+    const blink = (Math.sin(this.driveWarningBlinkTime * WARNING_SIGN_BLINK_SPEED) + 1) / 2;
+    const alpha = 0.25 + blink * 0.5;
+
+    if (this.driveWarningSign?.visible) {
+      this.driveWarningSign.setAlpha(alpha);
+    }
+
+    if (this.rockWarningSign?.visible) {
+      this.rockWarningSign.setAlpha(alpha);
+    }
   }
 
   private isRepairingState(state: PlayerState) {
