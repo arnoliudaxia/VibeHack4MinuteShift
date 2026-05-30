@@ -131,6 +131,40 @@ this.load.image('background', '/assets/scene/spaceShip.png');
 - `冰晶.png` 与玩家碰撞时调用空函数 `onIceCrystalHitPlayer()`。
 - 每个特殊陨石对象对玩家碰撞只触发一次。
 
+### Alien 追踪敌人
+
+场景中还有一个 alien 追踪敌人系统，资源位于 `assets/scene/Alien/`：
+
+- `外星人.png`：alien 本体贴图，运行时显示尺寸为 `70x70`。
+- `瞄准.png`：目标准星，显示尺寸为 `40x40`，有 alien 存在时显示在当前目标位置。
+
+Alien 生成时会锁定“当时处于飞船外部的玩家”作为目标，之后即使两个玩家 Swap 导致目标进入飞船内部，alien 也会继续追踪同一个玩家对象，不会重新选择目标。核心参数：
+
+- 生成间隔：`2200~5200ms`。
+- 移动速度：`155px/s`。
+- 碰撞距离：`ALIEN_HIT_DISTANCE + hitRadius`，当前为 `36 + 22`。
+- 接触伤害：`25`。
+- 击退力：`2400`。
+- 屏幕外生成/销毁边距：`90px`。
+
+运行规则：
+
+- 每次最多只存在一个 alien；只有 `alienSprites.length === 0` 时才会生成新的 alien。
+- 生成时通过 `getOutsidePlayerId()` 判断当前飞船外部玩家，并保存到 `alien.targetPlayer`。
+- 生成位置从屏幕上方、左侧或右侧随机选择，并放在屏幕外 `90px` 处。
+- 每帧通过 `alien.targetPlayer` 取得锁定目标，并沿直线靠近该目标。
+- Alien 会旋转朝向锁定目标，准星会跟随显示在锁定目标坐标上。
+- Alien 的正常追踪移动和击退移动都会使用飞船外部碰撞层 `physicOut.png`，语义与飞船外部玩家一致，只采样白色 `#FFFFFF` 作为阻挡。
+- Alien 从屏幕外生成进入画面时允许先越过场景边界；进入场景后再按 `physicOut.png` 阻挡。
+- 接触锁定目标时，如果本次接触尚未造成过伤害，则调用 `damageAlienTarget(...)`。
+- 如果锁定目标是 Player1，`damageAlienTarget(...)` 会调用 `damagePlayer(25)`；如果锁定目标是 Player2，当前调用空函数 `onSecondPlayerAlienContact(...)` 预留 Player2 受击逻辑。
+- 接触后 alien 会进入 `repelledByHit` 击退状态，沿远离锁定目标的方向被推出；击退速度每帧乘以 `0.9` 衰减。
+- 击退速度低于 `20` 后退出击退状态，恢复追踪。
+- 玩家和 alien 分离后，`alienDamageStates` 会重置为 `false`，下次接触可以再次造成伤害。
+- Alien 离开屏幕外边距后会被销毁，并重置下一次生成计时。
+
+`damagePlayer(...)` 当前只影响 Player1：扣除生命值、刷新生命条，并在生命值小于等于 0 时改变隐藏逻辑胶囊体颜色。Player2 的 alien 接触伤害入口暂时是空函数。
+
 ## 物理系统
 
 项目当前使用两张像素级物理标记图。它们不会直接显示在游戏场景中，而是在运行时通过 Canvas 读取像素数据，并转换成用于碰撞和状态检测的数据层。
@@ -311,10 +345,34 @@ UI 中的 `Player State` 会显示当前状态。
 
 当前场景中有两个独立玩家：
 
-- 主玩家：初始在飞船内部，使用 `WASD` 移动，`E` 互动，参与现有状态机、生命条、进度条、手持装备和传送 UI。飞船内部时使用 `physic.png` 碰撞。
-- 第二玩家：初始在飞船外部 `X=900, Y=100`，使用方向键移动，`L` 是他的互动键。第二玩家默认处于飞船外，不受重力影响，也不共享主玩家的状态机、进度条、手持装备或传送 UI。飞船外部时使用 `physicOut.png` 碰撞。
+- `Player1`：初始在飞船内部，使用 `WASD` 移动，`E` 互动。它参与现有状态机、生命条、房间交互、维修/Repo 进度、手持装备和 alien 伤害机制。
+- `Player2`：初始在飞船外部 `X=900, Y=100`，使用方向键移动，`L` 是他的互动键。`onSecondPlayerInteract()` 当前为空函数，预留后续交互。
 
-碰撞调试开启时，主玩家逻辑碰撞体显示为蓝色矩形，第二玩家逻辑碰撞体显示为紫色矩形。
+两名玩家的独立数据：
+
+- 各自有逻辑胶囊体锚点和 prefab 视觉层。
+- 各自有飞船内/外状态：`isPlayerInsideShip`、`isSecondPlayerInsideShip`。
+- 各自有重力状态和垂直速度：`isGravityEnabled` / `playerVelocityY`，`isSecondPlayerGravityEnabled` / `secondPlayerVelocityY`。
+- 各自有可交互 UI panel，包含 `Animation` 按钮、`Progress` slider 和 `Hand Tool` 按钮。
+- `Player1` 的 `Progress` 会参与真实维修/Repo 逻辑；`Player2` 的 `Progress` 当前只驱动自己的世界进度条显示。
+- `Player1` 和 `Player2` 都可以切换 prefab 动画和手持装备；这些视觉状态彼此独立。
+
+移动和碰撞：
+
+- `Player1` 使用 `WASD`，`Player2` 使用方向键。
+- 两名玩家都按 X/Y 分轴移动并采样对应物理图。
+- 处于飞船内部的玩家使用 `physic.png`，处于飞船外部的玩家使用 `physicOut.png`。
+- `physicOut.png` 当前只采样白色 `#FFFFFF` 作为外部阻挡。
+- `Player1` 在飞船内部仍可进入房间状态机；`Player2` 当前不参与房间状态机。
+
+Swap 机制：
+
+- 原调试面板中的 `Teleport` 按钮现在显示为 `Swap`。
+- 点击后交换 Player1 和 Player2 的坐标。
+- 同时交换两名玩家的飞船内/外状态和重力状态。
+- 交换后两名玩家的垂直速度清零，并刷新 prefab 视觉、生命条、进度条、坐标 UI 和碰撞调试框。
+
+碰撞调试开启时，Player1 逻辑碰撞体显示为蓝色矩形，Player2 逻辑碰撞体显示为紫色矩形。
 
 ### 手持装备
 

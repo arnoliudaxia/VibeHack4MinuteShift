@@ -113,7 +113,10 @@ type AlienSprite = Phaser.GameObjects.Container & {
   knockbackX: number;
   knockbackY: number;
   repelledByHit: boolean;
+  targetPlayer: PlayerId;
 };
+
+type PlayerId = 'player1' | 'player2';
 
 const ALIEN_MAX_SPAWN_DELAY = 5200;
 const ALIEN_MIN_SPAWN_DELAY = 2200;
@@ -2440,7 +2443,12 @@ class MainScene extends Phaser.Scene {
 
     for (let index = this.alienSprites.length - 1; index >= 0; index -= 1) {
       const alien = this.alienSprites[index];
-      const target = this.player;
+      const target = this.getAlienTarget(alien);
+
+      if (!target) {
+        continue;
+      }
+
       const dx = target.x - alien.x;
       const dy = target.y - alien.y;
       const distance = Math.max(Math.hypot(dx, dy), 0.001);
@@ -2453,8 +2461,7 @@ class MainScene extends Phaser.Scene {
       alien.velocityY = moveY / deltaSeconds;
 
       if (alien.repelledByHit) {
-        alien.x += alien.knockbackX * deltaSeconds;
-        alien.y += alien.knockbackY * deltaSeconds;
+        this.moveAlienWithOutsideCollision(alien, alien.knockbackX * deltaSeconds, alien.knockbackY * deltaSeconds);
         alien.knockbackX *= 0.9;
         alien.knockbackY *= 0.9;
 
@@ -2464,8 +2471,7 @@ class MainScene extends Phaser.Scene {
           alien.knockbackY = 0;
         }
       } else {
-        alien.x += moveX;
-        alien.y += moveY;
+        this.moveAlienWithOutsideCollision(alien, moveX, moveY);
       }
 
       alien.rotation = Phaser.Math.Angle.Between(alien.x, alien.y, target.x, target.y) + Math.PI / 2;
@@ -2479,7 +2485,7 @@ class MainScene extends Phaser.Scene {
         const wasHitRecently = this.alienDamageStates.get(alien) === true;
 
         if (!wasHitRecently) {
-          this.damagePlayer(ALIEN_CONTACT_DAMAGE);
+          this.damageAlienTarget(alien.targetPlayer, ALIEN_CONTACT_DAMAGE);
           this.alienDamageStates.set(alien, true);
         }
 
@@ -2502,6 +2508,46 @@ class MainScene extends Phaser.Scene {
       }
     }
 
+  }
+
+  private getAlienTarget(alien: AlienSprite) {
+    return alien.targetPlayer === 'player1' ? this.player : this.secondPlayer;
+  }
+
+  private moveAlienWithOutsideCollision(alien: AlienSprite, moveX: number, moveY: number) {
+    const nextX = alien.x + moveX;
+
+    if (
+      this.isAlienOutsideScene(nextX, alien.y, alien.hitRadius) ||
+      !this.collidesWithMap(nextX, alien.y, false, alien.hitRadius * 2, alien.hitRadius * 2)
+    ) {
+      alien.x = nextX;
+    }
+
+    const nextY = alien.y + moveY;
+
+    if (
+      this.isAlienOutsideScene(alien.x, nextY, alien.hitRadius) ||
+      !this.collidesWithMap(alien.x, nextY, false, alien.hitRadius * 2, alien.hitRadius * 2)
+    ) {
+      alien.y = nextY;
+    }
+  }
+
+  private isAlienOutsideScene(x: number, y: number, radius: number) {
+    return x - radius < 0 || x + radius > this.scale.width || y - radius < 0 || y + radius > this.scale.height;
+  }
+
+  private damageAlienTarget(targetPlayer: PlayerId, amount: number) {
+    if (targetPlayer === 'player1') {
+      this.damagePlayer(amount);
+      return;
+    }
+
+    this.onSecondPlayerAlienContact(amount);
+  }
+
+  private onSecondPlayerAlienContact(_amount: number) {
   }
 
   private syncSecondPlayerPrefabVisual() {
@@ -2605,7 +2651,9 @@ class MainScene extends Phaser.Scene {
   }
 
   private spawnAlien() {
-    if (!this.player) {
+    const targetPlayer = this.getOutsidePlayerId();
+
+    if (!this.getPlayerById(targetPlayer)) {
       return;
     }
 
@@ -2621,6 +2669,7 @@ class MainScene extends Phaser.Scene {
     alien.knockbackX = 0;
     alien.knockbackY = 0;
     alien.repelledByHit = false;
+    alien.targetPlayer = targetPlayer;
     this.alienDamageStates.set(alien, false);
     if (!this.alienReticle) {
       this.alienReticle = this.add.image(0, 0, 'alienReticle').setDisplaySize(40, 40).setDepth(21).setVisible(false);
@@ -2638,6 +2687,14 @@ class MainScene extends Phaser.Scene {
 
     this.alienSprites.push(alien);
     return alien;
+  }
+
+  private getOutsidePlayerId(): PlayerId {
+    return !this.isPlayerInsideShip ? 'player1' : 'player2';
+  }
+
+  private getPlayerById(playerId: PlayerId) {
+    return playerId === 'player1' ? this.player : this.secondPlayer;
   }
 
   private createAsteroid(
@@ -3552,7 +3609,7 @@ class MainScene extends Phaser.Scene {
       .setVisible(false);
   }
 
-  private collidesWithMap(x: number, y: number, isInsideShip = true) {
+  private collidesWithMap(x: number, y: number, isInsideShip = true, width = PLAYER_WIDTH, height = PLAYER_HEIGHT) {
     const collisionData = isInsideShip ? this.collisionData : this.outsideCollisionData;
     const collisionWidth = isInsideShip ? this.collisionWidth : this.outsideCollisionWidth;
     const collisionHeight = isInsideShip ? this.collisionHeight : this.outsideCollisionHeight;
@@ -3561,10 +3618,10 @@ class MainScene extends Phaser.Scene {
       return false;
     }
 
-    const left = Math.floor(x - PLAYER_WIDTH / 2);
-    const right = Math.ceil(x + PLAYER_WIDTH / 2);
-    const top = Math.floor(y - PLAYER_HEIGHT / 2);
-    const bottom = Math.ceil(y + PLAYER_HEIGHT / 2);
+    const left = Math.floor(x - width / 2);
+    const right = Math.ceil(x + width / 2);
+    const top = Math.floor(y - height / 2);
+    const bottom = Math.ceil(y + height / 2);
     const sampleStep = 4;
 
     for (let sampleY = top; sampleY <= bottom; sampleY += sampleStep) {
