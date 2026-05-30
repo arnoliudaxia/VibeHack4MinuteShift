@@ -95,6 +95,7 @@ const ASTEROID_ASSETS: AsteroidAsset[] = [
 ];
 
 const PLAYER_HAND_TOOL_ASSETS: PlayerHandToolAsset[] = [
+  { key: null, label: 'None' },
   { key: 'playerHandToolBow', label: 'Bow', path: '/assets/player-prefab/handTool/bow.png' },
   { key: 'playerHandToolFireExtinguisher', label: 'Extinguisher', path: '/assets/player-prefab/handTool/fireExtinguisher.png' }
 ];
@@ -148,9 +149,9 @@ type PlayerStateTransitionContext = {
 type PlayerStateTransition = (context: PlayerStateTransitionContext) => PlayerState;
 
 type PlayerHandToolAsset = {
-  key: string;
+  key: string | null;
   label: string;
-  path: string;
+  path?: string;
 };
 
 type RoomLayerOption = {
@@ -936,7 +937,9 @@ class MainScene extends Phaser.Scene {
       this.load.image(asset.key, asset.path);
     });
     PLAYER_HAND_TOOL_ASSETS.forEach((asset) => {
-      this.load.image(asset.key, asset.path);
+      if (asset.key && asset.path) {
+        this.load.image(asset.key, asset.path);
+      }
     });
     ROOM_CONFIGS.forEach((room) => {
       room.layerOptions.forEach((option) => {
@@ -1121,6 +1124,62 @@ class MainScene extends Phaser.Scene {
       })
       .setOrigin(1, 0)
       .setScrollFactor(0);
+
+    const controlsPanel = this.add.container(width - 16, height - 16).setScrollFactor(0);
+    const controlsBackground = this.add
+      .rectangle(0, 0, 230, 132, 0x0f172a, 0.82)
+      .setOrigin(1, 1);
+    const controlsTitle = this.add.text(-214, -118, '操作说明', {
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: '18px',
+      color: '#93c5fd'
+    });
+
+    const createKeycap = (label: string, x: number, y: number) => {
+      const keycap = this.add.container(x, y);
+      const keyBackground = this.add
+        .rectangle(0, 0, 32, 30, 0x1e293b, 1)
+        .setStrokeStyle(2, 0xcbd5e1, 1);
+      const keyText = this.add
+        .text(0, 0, label, {
+          fontFamily: 'Arial, Helvetica, sans-serif',
+          fontSize: '16px',
+          color: '#ffffff'
+        })
+        .setOrigin(0.5);
+
+      keycap.add([keyBackground, keyText]);
+
+      return keycap;
+    };
+
+    const keyW = createKeycap('W', -184, -72);
+    const keyA = createKeycap('A', -146, -72);
+    const keyS = createKeycap('S', -108, -72);
+    const keyD = createKeycap('D', -70, -72);
+    const moveHelpText = this.add.text(-36, -80, '移动', {
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: '16px',
+      color: '#ffffff'
+    });
+    const keyE = createKeycap('E', -184, -30);
+    const interactHelpText = this.add.text(-146, -38, '互动', {
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: '16px',
+      color: '#ffffff'
+    });
+
+    controlsPanel.add([
+      controlsBackground,
+      controlsTitle,
+      keyW,
+      keyA,
+      keyS,
+      keyD,
+      moveHelpText,
+      keyE,
+      interactHelpText
+    ]);
 
     const panel = this.add.container(16, 16).setScrollFactor(0);
     this.uiPanel = panel;
@@ -1558,9 +1617,23 @@ class MainScene extends Phaser.Scene {
     const asset = PLAYER_HAND_TOOL_ASSETS[nextIndex];
 
     this.currentHandToolIndex = nextIndex;
-    this.playerHandToolSprite.setTexture(asset.key).setDisplaySize(1.32, 0.73);
+    if (asset.key) {
+      this.playerHandToolSprite.setTexture(asset.key).setDisplaySize(1.32, 0.73).setVisible(true);
+    } else {
+      this.playerHandToolSprite.setVisible(false);
+    }
     this.handToolSelectedText?.setText(asset.label);
     this.handToolSelectedText?.setX(asset.label.length > 6 ? 103 : 132);
+  }
+
+  private setPlayerHandToolByLabel(label: string) {
+    const index = PLAYER_HAND_TOOL_ASSETS.findIndex((asset) => asset.label === label);
+
+    if (index === -1) {
+      return;
+    }
+
+    this.setPlayerHandTool(index);
   }
 
   update(time: number, delta: number) {
@@ -1709,12 +1782,13 @@ class MainScene extends Phaser.Scene {
     // this.addPrefabSprite(handLeft, 'playerPrefabShield', 0.29100013, 0.13100004, 0.52, 0.58); // TODO 右手暂时隐藏
     this.playerHandToolSprite = this.addPrefabSprite(
       bow,
-      PLAYER_HAND_TOOL_ASSETS[this.currentHandToolIndex].key,
+      PLAYER_HAND_TOOL_ASSETS[1].key!,
       0,
       0,
       1.32,
       0.73
     );
+    this.setPlayerHandTool(this.currentHandToolIndex);
     const arrow = this.createPrefabNode(bow, 0.005, -0.211, -90);
     const arrowSprite = this.addPrefabSprite(arrow, 'playerPrefabArrow', 0, 0, 0.88, 0.36, { alpha: 0 });
 
@@ -2118,6 +2192,7 @@ class MainScene extends Phaser.Scene {
 
   private acquireFireExtinguisher() {
     this.setRepoRoomOption('Empty');
+    this.setPlayerHandToolByLabel('Extinguisher');
     this.setPlayerProgress(0);
     this.playerState = 'Normal';
     this.applyPlayerState();

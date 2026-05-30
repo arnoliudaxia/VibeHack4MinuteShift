@@ -266,7 +266,7 @@ stateDiagram-v2
 - 玩家处于 `Normal` 且 Repo 房间处于 `Full` 时，进入 Repo 房间 alpha mask 区域会切换到该状态。
 - 玩家保持在 `RepoFull` 区域内时持续 `Repoing`。
 - 玩家进度条在该状态下显示，按住 `E` 会以每秒 50% 的速度增加进度。
-- 进度满时执行“获取灭火器”行为：调用 `acquireFireExtinguisher()`，将 Repo 切换为 `Empty`，玩家状态切回 `Normal`，进度归零并隐藏进度条。
+- 进度满时执行“获取灭火器”行为：调用 `acquireFireExtinguisher()`，将 Repo 切换为 `Empty`，玩家手持装备切换为 `Extinguisher`，玩家状态切回 `Normal`，进度归零并隐藏进度条。
 - 玩家离开 Repo 房间，或 Repo UI 切换到 `Empty` 后，切回 `Normal`。
 
 其他状态相关规则：
@@ -302,12 +302,12 @@ UI 中的 `Player State` 会显示当前状态。
 
 ### 手持装备
 
-玩家手持装备资源集中在 `assets/player-prefab/handTool/`。当前运行时会加载该目录中的图片：
+玩家手持装备资源集中在 `assets/player-prefab/handTool/`。当前默认状态为 `None`，表示手里什么都不拿。运行时会加载该目录中的图片：
 
-- `bow.png`：默认装备。
+- `bow.png`：弓装备。
 - `fireExtinguisher.png`：灭火器装备。
 
-UI 的 `Hand Tool` 按钮会在这些装备之间循环切换，切换只影响玩家 prefab 视觉层中的手持工具贴图，不改变玩家状态机或碰撞逻辑。
+UI 的 `Hand Tool` 按钮会在 `None`、`Bow`、`Extinguisher` 之间循环切换，切换只影响玩家 prefab 视觉层中的手持工具贴图，不改变玩家状态机或碰撞逻辑。
 
 ### 动画状态机
 
@@ -339,6 +339,8 @@ prefab 视觉层维护独立动画状态机，默认状态为 `Idle`。动画状
 
 左上角调试面板当前分为 `Player`、`Scene` 和 `Utility` 三个分组。按 `H` 可以显示或隐藏整个调试面板。
 
+右下角固定显示键盘按键样式的操作说明：`WASD` 以一排顺序键帽显示用于移动，`E` 以单独键帽显示用于互动。
+
 `Player` 分组顺序：
 
 - `Position`：显示玩家当前 `X/Y` 整数坐标。
@@ -346,7 +348,7 @@ prefab 视觉层维护独立动画状态机，默认状态为 `Idle`。动画状
 - `Gravity`：手动开关重力；`Climbing` 状态下不可手动切换。
 - `Animation`：手动切换 prefab 视觉动画。
 - `Progress`：手动调整维修进度条数值。
-- `Hand Tool`：循环切换玩家手持装备，目前包括 `Bow` 和 `Extinguisher`。
+- `Hand Tool`：循环切换玩家手持装备，目前包括 `None`、`Bow` 和 `Extinguisher`。
 
 `Scene` 分组包含：
 
