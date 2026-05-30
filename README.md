@@ -389,11 +389,14 @@ window.getPlayerAnimationState()
 
 - `金属碎片.png` 和 `冰晶.png` 不阻挡玩家。
 - Player1 和 Player2 都可以拾取。
-- 每个资源陨石只触发一次。
+- 每个资源陨石只触发一次，触发后会立即销毁并从陨石列表移除。
 - `金属碎片.png` 命中时输出 `获取到金属碎片资源`。
 - `冰晶.png` 命中时输出 `获取到冰晶资源`。
-- `metalDebrisCount` 和 `iceCrystalCount` 记录 Controls 面板中的资源数量。
-- `resourceCounts` 和顶部资源计数 UI 记录带上限的资源显示，当前上限为 `3`。
+- `metalDebrisCount` 和 `iceCrystalCount` 是资源数量的数据源。
+- Controls 面板中的 `Resources` 文本和顶部 `ResourceCounter` UI 都绑定到这两个数量。
+- `ResourceCounter` 显示格式为 `已收集/需求`，当前需求为 `3`，例如 `0/3`。
+- 资源数量达到 `3/3` 后，对应 `ResourceCounter` 外框从蓝色变为绿色。
+- `resourceCounts` 只保留为顶部计数 UI 的封顶显示缓存，显示值最大为 `3/3`。
 
 ## 上方破坏陨石和爆炸
 
@@ -430,8 +433,18 @@ PowerCrystal 使用独立序列帧：
 - PS 坐标按左上角解释：`X=814, Y=645`。
 - Phaser sprite 实际中心点：`X=850, Y=685`。
 - 显示尺寸：`72x80`。
-- 默认显示第一帧。
-- UI 中的 `Crystal` 按钮播放一次动画，结束后回到第一帧。
+- 动画帧状态绑定到飞船能源数值：能源 `100` 对应第一帧，能源 `0` 对应最后一帧。
+- UI 中的 `Crystal` 控件现在显示当前位置信息，不再手动播放动画。
+
+## 飞船能源
+
+飞船能源是一个全局状态，类型 `int`，范围 `0~100`。
+
+- 初始值：`100`。
+- 衰减速率：`3/s`。
+- 能源会随时间连续减少，到达 `0` 后停止衰减。
+- Controls 面板中的 `Ship Energy` 区域显示当前能源值。
+- PowerCrystal 的 16 帧动画根据能源值实时匹配：能源 `100` -> 第 1 帧，能源 `0` -> 第 16 帧。
 
 ## Alien
 
@@ -488,6 +501,7 @@ BGM 默认静音。
 左侧原始面板：`Controls`
 
 - `Teleport` / `Swap`：交换两个玩家位置、内外状态和重力状态。
+- `Ship Energy`：显示当前飞船能源数值，范围为 `0~100`，每秒衰减 `3`。
 - `Resources`：显示 `金属碎片` 和 `冰晶` 数量。
 - `Scene`：场景调试和房间开关。
 - `Utility`：工具按钮。
@@ -527,7 +541,7 @@ Scene 分组：
 - `Drive`：切换 `Normal` / `Wrong`。
 - `Outer`：损坏时显示 `Repair`，点击后修复。
 - `Repo`：切换 `Full` / `Empty`。
-- `Crystal`：播放 PowerCrystal 动画。
+- `Crystal`：显示 PowerCrystal 位置信息，帧状态自动匹配飞船能源。
 
 Utility 分组：
 

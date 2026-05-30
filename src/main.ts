@@ -78,8 +78,8 @@ const ASTEROID_MAX_SCALE = 1.5;
 // 上面的破坏性陨石轨道
 const PIXEL_ASTEROID_LANE_MIN_Y = 100;
 const PIXEL_ASTEROID_LANE_MAX_Y = 140;
-const PIXEL_ASTEROID_LANE_MIN_SPAWN_DELAY = 7000;
-const PIXEL_ASTEROID_LANE_MAX_SPAWN_DELAY = 18000;
+const PIXEL_ASTEROID_LANE_MIN_SPAWN_DELAY = 13000;
+const PIXEL_ASTEROID_LANE_MAX_SPAWN_DELAY = 24000;
 const PIXEL_ASTEROID_WARNING_LEAD_TIME = 3000;
 const PIXEL_ASTEROID_TRIGGER_X = 650;
 const EXPLOSION_ANIMATION_KEY = 'explosion-test';
@@ -89,6 +89,8 @@ const POWER_CRYSTAL_WIDTH = 72;
 const POWER_CRYSTAL_HEIGHT = 80;
 const POWER_CRYSTAL_X = 814 + POWER_CRYSTAL_WIDTH / 2;
 const POWER_CRYSTAL_Y = 645 + POWER_CRYSTAL_HEIGHT / 2;
+const SHIP_MAX_ENERGY = 100;
+const SHIP_ENERGY_DECAY_PER_SECOND = 3;
 const RESOURCE_COUNTER_MAX = 3;
 const RESOURCE_COUNTER_BOX_WIDTH = 72;
 const RESOURCE_COUNTER_BOX_HEIGHT = 92;
@@ -193,6 +195,7 @@ type ResourceCounterKind = AsteroidCollisionKind;
 
 type ResourceCounterUi = {
   container: Phaser.GameObjects.Container;
+  box: Phaser.GameObjects.Rectangle;
   text: Phaser.GameObjects.Text;
 };
 
@@ -570,7 +573,7 @@ const PLAYER_PREFAB_ANIMATIONS: Record<PlayerPrefabAnimationName, PrefabAnimatio
   },
   Attack: {
     duration: 1.8333334,
-    loop: true,
+    loop: false,
     positions: {
       body: [
         { time: 0, x: 0.006000102, y: 0.1759999 },
@@ -1050,6 +1053,8 @@ class MainScene extends Phaser.Scene {
   private nextAlienSpawnDelay = 0;
   private alienReticle?: Phaser.GameObjects.Image;
   private alienDamageStates = new WeakMap<AlienSprite, boolean>();
+  private shipEnergy = SHIP_MAX_ENERGY;
+  private shipEnergyText?: Phaser.GameObjects.Text;
   private metalDebrisCount = 0;
   private iceCrystalCount = 0;
   private resourcesText?: Phaser.GameObjects.Text;
@@ -1391,38 +1396,38 @@ class MainScene extends Phaser.Scene {
     const panel = this.add.container(16, 16).setScrollFactor(0);
     this.uiPanel = panel;
     const panelBackground = this.add
-      .rectangle(0, 0, 220, 692, 0x0f172a, 0.82)
+      .rectangle(0, 0, 220, 752, 0x0f172a, 0.82)
       .setOrigin(0);
     const playerGroupLabel = this.add.text(14, 16, 'Controls', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '18px',
       color: '#93c5fd'
     });
-    const soundLabel = this.add.text(14, 212, 'BGM', {
+    const soundLabel = this.add.text(14, 286, 'BGM', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '16px',
       color: '#ffffff'
     });
     const muteButton = this.add
-      .rectangle(PANEL_CONTROL_X, 207, PANEL_CONTROL_WIDTH, 28, 0x475569, 1)
+      .rectangle(PANEL_CONTROL_X, 281, PANEL_CONTROL_WIDTH, 28, 0x475569, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
-    const muteText = this.add.text(119, 213, 'Muted', {
+    const muteText = this.add.text(119, 287, 'Muted', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '14px',
       color: '#ffffff'
     });
 
-    const collisionLabel = this.add.text(14, 256, 'Collision', {
+    const collisionLabel = this.add.text(14, 330, 'Collision', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '16px',
       color: '#ffffff'
     });
     const collisionButton = this.add
-      .rectangle(PANEL_CONTROL_X, 251, PANEL_CONTROL_WIDTH, 28, 0x475569, 1)
+      .rectangle(PANEL_CONTROL_X, 325, PANEL_CONTROL_WIDTH, 28, 0x475569, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
-    const collisionText = this.add.text(127, 257, 'Hidden', {
+    const collisionText = this.add.text(127, 331, 'Hidden', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '14px',
       color: '#ffffff'
@@ -1472,16 +1477,16 @@ class MainScene extends Phaser.Scene {
       color: '#ffffff'
     });
 
-    const shipFireLabel = this.add.text(14, 300, 'Ship Fire', {
+    const shipFireLabel = this.add.text(14, 374, 'Ship Fire', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '16px',
       color: '#ffffff'
     });
     const shipFireButton = this.add
-      .rectangle(PANEL_CONTROL_X, 295, PANEL_CONTROL_WIDTH, 32, 0x475569, 1)
+      .rectangle(PANEL_CONTROL_X, 369, PANEL_CONTROL_WIDTH, 32, 0x475569, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
-    const shipFireText = this.add.text(127, 302, 'Hidden', {
+    const shipFireText = this.add.text(127, 376, 'Hidden', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#ffffff'
@@ -1511,24 +1516,24 @@ class MainScene extends Phaser.Scene {
     this.input.setDraggable(this.progressSliderHandle);
     this.updateProgressSlider(0);
 
-    const sceneGroupLabel = this.add.text(14, 174, 'Scene', {
+    const sceneGroupLabel = this.add.text(14, 248, 'Scene', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '18px',
       color: '#93c5fd'
     });
 
-    const label = this.add.text(14, 344, DRIVE_ROOM_CONFIG.label, {
+    const label = this.add.text(14, 418, DRIVE_ROOM_CONFIG.label, {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '16px',
       color: '#ffffff'
     });
 
     const selectedBackground = this.add
-      .rectangle(PANEL_CONTROL_X, 339, PANEL_CONTROL_WIDTH, 32, 0x22c55e, 1)
+      .rectangle(PANEL_CONTROL_X, 413, PANEL_CONTROL_WIDTH, 32, 0x22c55e, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
     this.driveStateButton = selectedBackground;
-    const selectedText = this.add.text(104, 346, 'Normal', {
+    const selectedText = this.add.text(104, 420, 'Normal', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#ffffff'
@@ -1547,97 +1552,97 @@ class MainScene extends Phaser.Scene {
     });
     this.updatePlayerCoordinateUi();
 
-    const outerLabel = this.add.text(14, 388, 'Outer', {
+    const outerLabel = this.add.text(14, 462, 'Outer', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '16px',
       color: '#ffffff'
     });
     this.outerRepairButton = this.add
-      .rectangle(PANEL_CONTROL_X, 383, PANEL_CONTROL_WIDTH, 32, 0x475569, 1)
+      .rectangle(PANEL_CONTROL_X, 457, PANEL_CONTROL_WIDTH, 32, 0x475569, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
-    this.outerRepairText = this.add.text(126, 390, 'Normal', {
+    this.outerRepairText = this.add.text(126, 464, 'Normal', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#ffffff'
     });
     this.updateOuterWrongUi();
 
-    const livingLabel = this.add.text(14, 432, LIVING_ROOM_CONFIG.label, {
+    const livingLabel = this.add.text(14, 506, LIVING_ROOM_CONFIG.label, {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '16px',
       color: '#ffffff'
     });
     this.livingStateButton = this.add
-      .rectangle(PANEL_CONTROL_X, 427, PANEL_CONTROL_WIDTH, 32, 0x22c55e, 1)
+      .rectangle(PANEL_CONTROL_X, 501, PANEL_CONTROL_WIDTH, 32, 0x22c55e, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
-    this.livingSelectedText = this.add.text(104, 434, 'Normal', {
+    this.livingSelectedText = this.add.text(104, 508, 'Normal', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#ffffff'
     });
 
-    const plantLabel = this.add.text(14, 476, PLANT_ROOM_CONFIG.label, {
+    const plantLabel = this.add.text(14, 550, PLANT_ROOM_CONFIG.label, {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '16px',
       color: '#ffffff'
     });
     this.plantStateButton = this.add
-      .rectangle(PANEL_CONTROL_X, 471, PANEL_CONTROL_WIDTH, 32, 0x22c55e, 1)
+      .rectangle(PANEL_CONTROL_X, 545, PANEL_CONTROL_WIDTH, 32, 0x22c55e, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
-    this.plantSelectedText = this.add.text(104, 478, 'Normal', {
+    this.plantSelectedText = this.add.text(104, 552, 'Normal', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#ffffff'
     });
 
-    const repoLabel = this.add.text(14, 520, REPO_ROOM_CONFIG.label, {
+    const repoLabel = this.add.text(14, 594, REPO_ROOM_CONFIG.label, {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '16px',
       color: '#ffffff'
     });
     this.repoStateButton = this.add
-      .rectangle(PANEL_CONTROL_X, 515, PANEL_CONTROL_WIDTH, 32, 0x22c55e, 1)
+      .rectangle(PANEL_CONTROL_X, 589, PANEL_CONTROL_WIDTH, 32, 0x22c55e, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
-    this.repoSelectedText = this.add.text(126, 522, 'Full', {
+    this.repoSelectedText = this.add.text(126, 596, 'Full', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#ffffff'
     });
 
-    const powerCrystalLabel = this.add.text(14, 564, 'Crystal', {
+    const powerCrystalLabel = this.add.text(14, 638, 'Crystal', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '16px',
       color: '#ffffff'
     });
     const powerCrystalButton = this.add
-      .rectangle(PANEL_CONTROL_X, 559, PANEL_CONTROL_WIDTH, 32, 0x2563eb, 1)
+      .rectangle(PANEL_CONTROL_X, 633, PANEL_CONTROL_WIDTH, 32, 0x2563eb, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
-    const powerCrystalText = this.add.text(133, 566, 'Play', {
+    const powerCrystalText = this.add.text(126, 640, 'Energy', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#ffffff'
     });
 
-    const utilityGroupLabel = this.add.text(14, 608, 'Utility', {
+    const utilityGroupLabel = this.add.text(14, 682, 'Utility', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '18px',
       color: '#93c5fd'
     });
-    const screenshotLabel = this.add.text(14, 648, 'Screenshot', {
+    const screenshotLabel = this.add.text(14, 720, 'Screenshot', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#ffffff'
     });
     const screenshotButton = this.add
-      .rectangle(PANEL_CONTROL_X, 643, PANEL_CONTROL_WIDTH, 32, 0x0ea5e9, 1)
+      .rectangle(PANEL_CONTROL_X, 715, PANEL_CONTROL_WIDTH, 32, 0x0ea5e9, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
-    const screenshotText = this.add.text(133, 650, 'Save', {
+    const screenshotText = this.add.text(133, 722, 'Save', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#ffffff'
@@ -1672,12 +1677,23 @@ class MainScene extends Phaser.Scene {
       color: '#ffffff'
     });
 
-    const resourcesLabel = this.add.text(14, 98, 'Resources', {
+    const shipEnergyLabel = this.add.text(14, 98, 'Ship Energy', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '18px',
       color: '#93c5fd'
     });
-    this.resourcesText = this.add.text(14, 128, '', {
+    this.shipEnergyText = this.add.text(14, 128, `${this.shipEnergy}`, {
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: '14px',
+      color: '#ffffff'
+    });
+
+    const resourcesLabel = this.add.text(14, 160, 'Resources', {
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: '18px',
+      color: '#93c5fd'
+    });
+    this.resourcesText = this.add.text(14, 190, '', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '14px',
       color: '#ffffff',
@@ -1887,6 +1903,8 @@ class MainScene extends Phaser.Scene {
       teleportLabel,
       this.teleportButton,
       this.teleportText,
+      shipEnergyLabel,
+      this.shipEnergyText,
       resourcesLabel,
       this.resourcesText,
       playerTwoPanelLabel,
@@ -1934,9 +1952,7 @@ class MainScene extends Phaser.Scene {
       this.setRepoRoomOption(this.currentRepoRoomOption === 'Full' ? 'Empty' : 'Full');
     });
 
-    powerCrystalButton.on('pointerdown', () => {
-      this.playPowerCrystalAnimation();
-    });
+    powerCrystalButton.disableInteractive();
 
     screenshotButton.on('pointerdown', () => {
       this.captureScreenshot();
@@ -2097,13 +2113,20 @@ class MainScene extends Phaser.Scene {
     this.uiPanel.setVisible(this.isUiPanelVisible);
   }
 
-  private playPowerCrystalAnimation() {
+  private updateShipEnergy(delta: number) {
+    this.shipEnergy = Math.max(this.shipEnergy - SHIP_ENERGY_DECAY_PER_SECOND * (delta / 1000), 0);
+    this.shipEnergyText?.setText(`${Math.round(this.shipEnergy)}`);
+    this.updateShipEnergyCrystalFrame();
+  }
+
+  private updateShipEnergyCrystalFrame() {
     if (!this.powerCrystalSprite) {
       return;
     }
 
-    this.powerCrystalSprite.setTexture(POWER_CRYSTAL_FRAME_KEYS[0]);
-    this.powerCrystalSprite.play(POWER_CRYSTAL_ANIMATION_KEY, true);
+    const frameIndex = Math.round(((SHIP_MAX_ENERGY - this.shipEnergy) / SHIP_MAX_ENERGY) * (POWER_CRYSTAL_FRAME_KEYS.length - 1));
+
+    this.powerCrystalSprite.setTexture(POWER_CRYSTAL_FRAME_KEYS[Math.min(frameIndex, POWER_CRYSTAL_FRAME_KEYS.length - 1)]);
   }
 
   private captureScreenshot() {
@@ -2293,7 +2316,7 @@ class MainScene extends Phaser.Scene {
       .image(0, -20, kind)
       .setDisplaySize(RESOURCE_COUNTER_ICON_SIZE, RESOURCE_COUNTER_ICON_SIZE);
     const text = this.add
-      .text(0, 28, `${this.resourceCounts[kind]}/${RESOURCE_COUNTER_MAX}`, {
+      .text(0, 28, '0/3', {
         fontFamily: 'Arial, Helvetica, sans-serif',
         fontSize: '22px',
         color: '#f8fafc',
@@ -2303,12 +2326,43 @@ class MainScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     container.add([box, divider, icon, text]);
-    this.resourceCounters.set(kind, { container, text });
+    this.resourceCounters.set(kind, { container, box, text });
+    this.updateResourceCounterUi(kind);
   }
 
   private collectResource(kind: ResourceCounterKind) {
-    this.resourceCounts[kind] = Math.min(this.resourceCounts[kind] + 1, RESOURCE_COUNTER_MAX);
-    this.resourceCounters.get(kind)?.text.setText(`${this.resourceCounts[kind]}/${RESOURCE_COUNTER_MAX}`);
+    this.incrementResourceCount(kind);
+  }
+
+  private incrementResourceCount(kind: ResourceCounterKind) {
+    if (kind === 'metalDebris') {
+      this.metalDebrisCount += 1;
+    } else {
+      this.iceCrystalCount += 1;
+    }
+
+    this.resourceCounts[kind] = Math.min(this.getResourceCount(kind), RESOURCE_COUNTER_MAX);
+    this.updateResourceCounterUi(kind);
+    this.updateResourcesUi();
+  }
+
+  private getResourceCount(kind: ResourceCounterKind) {
+    return kind === 'metalDebris' ? this.metalDebrisCount : this.iceCrystalCount;
+  }
+
+  private updateResourceCounterUi(kind: ResourceCounterKind) {
+    const counter = this.resourceCounters.get(kind);
+
+    if (!counter) {
+      return;
+    }
+
+    const count = this.getResourceCount(kind);
+    const displayCount = Math.min(count, RESOURCE_COUNTER_MAX);
+    const isComplete = count >= RESOURCE_COUNTER_MAX;
+
+    counter.text.setText(`${displayCount}/${RESOURCE_COUNTER_MAX}`);
+    counter.box.setStrokeStyle(3, isComplete ? 0x22c55e : 0x93c5fd, isComplete ? 1 : 0.92);
   }
 
   private updateSnowNoiseOverlay(delta: number) {
@@ -2408,7 +2462,7 @@ class MainScene extends Phaser.Scene {
     }
 
     if (Phaser.Input.Keyboard.JustDown(this.secondPlayerKeys.L)) {
-      this.onSecondPlayerInteract();
+      this.handlePlayerAction('player2');
     }
 
     this.updateSecondPlayerState();
@@ -2497,10 +2551,6 @@ class MainScene extends Phaser.Scene {
     this.updateSecondPlayerHealthBar();
     this.updateSecondPlayerInfoUi();
     this.updateCollisionBodyDebug();
-  }
-
-  private onSecondPlayerInteract() {
-    this.performPlayerAttack('player2');
   }
 
   private getPlayerMovementInputDirection() {
@@ -2603,12 +2653,7 @@ class MainScene extends Phaser.Scene {
       return;
     }
 
-    if (this.secondPlayerState === 'Climbing') {
-      this.liftSecondPlayerOutOfLadder();
-    }
-
-    this.secondPlayerState = nextState;
-    this.applySecondPlayerState();
+    this.transitionSecondPlayerState(nextState);
   }
 
   update(time: number, delta: number) {
@@ -2616,13 +2661,14 @@ class MainScene extends Phaser.Scene {
     this.updateAliens(delta);
     this.updateSnowNoiseOverlay(delta);
     this.updateDriveWarningSign(delta);
+    this.updateShipEnergy(delta);
 
     if (this.keys && Phaser.Input.Keyboard.JustDown(this.keys.H)) {
       this.toggleUiPanelVisibility();
     }
 
     if (this.keys && Phaser.Input.Keyboard.JustDown(this.keys.E)) {
-      this.performPlayerAttack('player1');
+      this.handlePlayerAction('player1');
     }
 
     if (!this.player || !this.keys) {
@@ -3049,6 +3095,10 @@ class MainScene extends Phaser.Scene {
       return;
     }
 
+    if (!this.isPlayerHandEmpty(playerId)) {
+      return;
+    }
+
     if (playerId === 'player1') {
       this.setPlayerHandToolByLabel('Axe');
       this.playPlayerPrefabAnimation('Attack');
@@ -3069,6 +3119,72 @@ class MainScene extends Phaser.Scene {
     if (asteroid) {
       this.destroyAsteroidByAttack(asteroid);
     }
+  }
+
+  private isPlayerHandEmpty(playerId: PlayerId) {
+    const handToolIndex = playerId === 'player1' ? this.currentHandToolIndex : this.secondPlayerHandToolIndex;
+
+    return PLAYER_HAND_TOOL_ASSETS[handToolIndex]?.label === 'None';
+  }
+
+  private handlePlayerAction(playerId: PlayerId) {
+    if (this.tryStartPlayerInteraction(playerId)) {
+      return;
+    }
+
+    this.performPlayerAttack(playerId);
+  }
+
+  private tryStartPlayerInteraction(playerId: PlayerId) {
+    if (playerId === 'player1') {
+      return this.tryStartPrimaryPlayerInteraction();
+    }
+
+    return this.tryStartSecondPlayerInteraction();
+  }
+
+  private tryStartPrimaryPlayerInteraction() {
+    if (!this.player) {
+      return false;
+    }
+
+    const context = this.createPlayerStateTransitionContextFor(
+      this.player,
+      this.keys?.W.isDown === true || this.keys?.S.isDown === true,
+      true
+    );
+    const nextState = this.playerStateTransitions[this.playerState](context);
+
+    if (!this.isInteractionState(nextState)) {
+      return false;
+    }
+
+    this.transitionPlayerState(nextState);
+    return true;
+  }
+
+  private tryStartSecondPlayerInteraction() {
+    if (!this.secondPlayer) {
+      return false;
+    }
+
+    const context = this.createPlayerStateTransitionContextFor(
+      this.secondPlayer,
+      this.secondPlayerKeys?.UP.isDown === true || this.secondPlayerKeys?.DOWN.isDown === true,
+      true
+    );
+    const nextState = this.playerStateTransitions[this.secondPlayerState](context);
+
+    if (!this.isInteractionState(nextState)) {
+      return false;
+    }
+
+    this.transitionSecondPlayerState(nextState);
+    return true;
+  }
+
+  private isInteractionState(state: PlayerState) {
+    return state !== 'Normal' && state !== 'Climbing';
   }
 
   private findClosestAlien(player: Phaser.GameObjects.Graphics, maxDistance: number) {
@@ -3201,6 +3317,9 @@ class MainScene extends Phaser.Scene {
       if (asteroid.collisionKind && !asteroid.hasTriggeredPlayerCollision && this.overlapsAnyPlayer(asteroid)) {
         asteroid.hasTriggeredPlayerCollision = true;
         this.onResourceAsteroidHitPlayer(asteroid.collisionKind);
+        asteroid.destroy();
+        this.asteroids.splice(index, 1);
+        continue;
       }
 
       if (asteroid.x + asteroid.displayWidth / 2 >= -40) {
@@ -3434,14 +3553,8 @@ class MainScene extends Phaser.Scene {
   private onResourceAsteroidHitPlayer(collisionKind: AsteroidCollisionKind) {
     const resourceName = collisionKind === 'metalDebris' ? '金属碎片' : '冰晶';
 
-    if (collisionKind === 'metalDebris') {
-      this.metalDebrisCount += 1;
-    } else {
-      this.iceCrystalCount += 1;
-    }
-
+    this.incrementResourceCount(collisionKind);
     console.log(`获取到${resourceName}资源`);
-    this.updateResourcesUi();
   }
 
   private updateResourcesUi() {
@@ -4158,6 +4271,11 @@ class MainScene extends Phaser.Scene {
     }
 
     this.applyPlayerPrefabAnimationFrame(clip, this.playerPrefabAnimationTime);
+
+    if (!clip.loop && this.playerPrefabAnimationTime >= clip.duration && this.playerPrefabAnimationState === 'Attack') {
+      this.setPlayerHandToolByLabel('None');
+      this.playPlayerPrefabAnimation('Idle');
+    }
   }
 
   private updateSecondPlayerPrefabAnimation(delta: number) {
@@ -4176,6 +4294,11 @@ class MainScene extends Phaser.Scene {
     }
 
     this.applySecondPlayerPrefabAnimationFrame(clip, this.secondPlayerPrefabAnimationTime);
+
+    if (!clip.loop && this.secondPlayerPrefabAnimationTime >= clip.duration && this.secondPlayerAnimationState === 'Attack') {
+      this.setSecondPlayerHandToolByLabel('None');
+      this.playSecondPlayerPrefabAnimation('Idle');
+    }
   }
 
   private applyPlayerPrefabAnimationFrame(clip: PrefabAnimationClip, time: number) {
@@ -4574,6 +4697,19 @@ class MainScene extends Phaser.Scene {
 
     this.playerState = nextState;
     this.applyPlayerState();
+  }
+
+  private transitionSecondPlayerState(nextState: PlayerState) {
+    if (nextState === this.secondPlayerState) {
+      return;
+    }
+
+    if (this.secondPlayerState === 'Climbing') {
+      this.liftSecondPlayerOutOfLadder();
+    }
+
+    this.secondPlayerState = nextState;
+    this.applySecondPlayerState();
   }
 
   private applyPlayerState() {
