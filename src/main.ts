@@ -25,6 +25,14 @@ const PLAYER_SWAP_IMPULSE_SPEED = 500;
 const PLAYER_SWAP_IMPULSE_DURATION = 1000;
 const PLAYER_OUTER_REPAIR_PROGRESS_PER_SECOND = 0.1;
 const PLAYER_ATTACK_DISTANCE = 130;
+const DROPPED_EXTINGUISHER_WIDTH = 80;
+const DROPPED_EXTINGUISHER_HEIGHT = 44;
+const DROPPED_EXTINGUISHER_PICKUP_PROGRESS_PER_SECOND = 2;
+const DROPPED_CLOTHING_PICKUP_PROGRESS_PER_SECOND = 2;
+const DROPPED_CHEST_WIDTH = 72;
+const DROPPED_CHEST_HEIGHT = 64;
+const DROPPED_HAIR_WIDTH = 52;
+const DROPPED_HAIR_HEIGHT = 52;
 const ROOM_RANDOM_FIRE_MIN_DELAY = 10000;
 const ROOM_RANDOM_FIRE_MAX_DELAY = 40000;
 
@@ -248,6 +256,20 @@ type PlayerPanelControls = {
   progressHandle: Phaser.GameObjects.Arc;
   progressText: Phaser.GameObjects.Text;
   handToolText: Phaser.GameObjects.Text;
+};
+
+type DroppedExtinguisher = {
+  x: number;
+  y: number;
+  sprite: Phaser.GameObjects.Image;
+};
+
+type DroppedClothing = {
+  playerId: PlayerId;
+  x: number;
+  y: number;
+  chestSprite: Phaser.GameObjects.Image;
+  hairSprite: Phaser.GameObjects.Image;
 };
 
 type RoomLayerOption = {
@@ -909,8 +931,14 @@ class MainScene extends Phaser.Scene {
   private playerPrefabAnimationSprites?: PrefabAnimationSprites;
   private secondPlayerPrefabAnimationNodes?: PrefabAnimationNodes;
   private secondPlayerPrefabAnimationSprites?: PrefabAnimationSprites;
+  private playerChestSprite?: PrefabAnimationSprite;
+  private playerHairSprite?: PrefabAnimationSprite;
+  private secondPlayerChestSprite?: PrefabAnimationSprite;
+  private secondPlayerHairSprite?: PrefabAnimationSprite;
   private playerHandToolSprite?: PrefabAnimationSprite;
   private secondPlayerHandToolSprite?: PrefabAnimationSprite;
+  private isPlayerWearingClothing = true;
+  private isSecondPlayerWearingClothing = true;
   private currentHandToolIndex = 0;
   private handToolSelectedText?: Phaser.GameObjects.Text;
   private teleportButton?: Phaser.GameObjects.Rectangle;
@@ -920,6 +948,14 @@ class MainScene extends Phaser.Scene {
   private secondPlayerAnimationState: PlayerPrefabAnimationName = 'Idle';
   private secondPlayerPrefabAnimationTime = 0;
   private secondPlayerProgress = 0;
+  private playerExtinguisherPickupProgress = 0;
+  private secondPlayerExtinguisherPickupProgress = 0;
+  private playerClothingPickupProgress = 0;
+  private secondPlayerClothingPickupProgress = 0;
+  private playerPickupExtinguisher?: DroppedExtinguisher;
+  private secondPlayerPickupExtinguisher?: DroppedExtinguisher;
+  private playerPickupClothing?: DroppedClothing;
+  private secondPlayerPickupClothing?: DroppedClothing;
   private secondPlayerState: PlayerState = 'Normal';
   private secondPlayerHandToolIndex = 0;
   private keys?: PlayerKeys;
@@ -960,6 +996,8 @@ class MainScene extends Phaser.Scene {
   private repoSelectedText?: Phaser.GameObjects.Text;
   private currentRepoRoomOption = 'Full';
   private powerCrystalSprite?: Phaser.GameObjects.Sprite;
+  private droppedExtinguishers: DroppedExtinguisher[] = [];
+  private droppedClothingItems: DroppedClothing[] = [];
   private resourceCounters = new Map<ResourceCounterKind, ResourceCounterUi>();
   private resourceCounts: Record<ResourceCounterKind, number> = {
     metalDebris: 0,
@@ -1120,9 +1158,12 @@ class MainScene extends Phaser.Scene {
       });
     });
     this.load.image('playerPrefabBody', '/assets/player-prefab/body.png');
-    this.load.image('playerPrefabChest', '/assets/player-prefab/chest.png');
+    this.load.image('playerPrefabChest1', '/assets/player-prefab/chest/cheat-1.png');
+    this.load.image('playerPrefabChest2', '/assets/player-prefab/chest/chest-2.png');
+    this.load.image('playerPrefabChestOuter', '/assets/player-prefab/chest/chest-outer.png');
     this.load.image('playerPrefabHead', '/assets/player-prefab/head.png');
-    this.load.image('playerPrefabHair', '/assets/player-prefab/hair.png');
+    this.load.image('playerPrefabHair1', '/assets/player-prefab/hair/hair-1.png');
+    this.load.image('playerPrefabHair2', '/assets/player-prefab/hair/hair-2.png');
     this.load.image('playerPrefabEye', '/assets/player-prefab/eye.png');
     // this.load.image('playerPrefabShield', '/assets/player-prefab/shield.png');
     this.load.image('playerPrefabBowLineDown', '/assets/player-prefab/bow-line-down.png');
@@ -1729,20 +1770,14 @@ class MainScene extends Phaser.Scene {
       color: '#ffffff'
     });
 
-<<<<<<< Updated upstream
     const shipEnergyLabel = this.add.text(14, 98, 'Ship Energy', {
-=======
-    const resourcesLabel = this.add.text(14, 136, 'Resources', {
->>>>>>> Stashed changes
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '18px',
       color: '#93c5fd'
     });
-<<<<<<< Updated upstream
     this.shipEnergyText = this.add.text(14, 128, `${this.shipEnergy}`, {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '14px',
-      color: '#ffffff'
     });
 
     const resourcesLabel = this.add.text(14, 160, 'Resources', {
@@ -1751,13 +1786,7 @@ class MainScene extends Phaser.Scene {
       color: '#93c5fd'
     });
     this.resourcesText = this.add.text(14, 190, '', {
-=======
-    this.resourcesText = this.add.text(14, 166, '', {
->>>>>>> Stashed changes
       fontFamily: 'Arial, Helvetica, sans-serif',
-      fontSize: '14px',
-      color: '#ffffff',
-      lineSpacing: 4
     });
     this.updateResourcesUi();
 
@@ -1963,14 +1992,11 @@ class MainScene extends Phaser.Scene {
       teleportLabel,
       this.teleportButton,
       this.teleportText,
-<<<<<<< Updated upstream
       shipEnergyLabel,
       this.shipEnergyText,
-=======
       swapWarningLabel,
       swapWarningButton,
       swapWarningButtonText,
->>>>>>> Stashed changes
       resourcesLabel,
       this.resourcesText,
       playerTwoPanelLabel,
@@ -2731,11 +2757,8 @@ class MainScene extends Phaser.Scene {
     this.updateAliens(delta);
     this.updateSnowNoiseOverlay(delta);
     this.updateDriveWarningSign(delta);
-<<<<<<< Updated upstream
     this.updateShipEnergy(delta);
-=======
     this.updateSwapWarningCountdown(delta);
->>>>>>> Stashed changes
 
     if (this.keys && Phaser.Input.Keyboard.JustDown(this.keys.H)) {
       this.toggleUiPanelVisibility();
@@ -2812,6 +2835,7 @@ class MainScene extends Phaser.Scene {
       this.updatePlayerProgressBar();
       this.updatePlayerCoordinateUi();
       this.updateCollisionBodyDebug();
+      this.updateDroppedExtinguisherPickups(delta);
       return;
     }
 
@@ -2852,6 +2876,7 @@ class MainScene extends Phaser.Scene {
     this.updatePlayerCoordinateUi();
     this.updateOuterWrongEntryDetection();
     this.updateCollisionBodyDebug();
+    this.updateDroppedExtinguisherPickups(delta);
   }
 
   private createPlayerPrefabVisual(x: number, y: number) {
@@ -2863,12 +2888,12 @@ class MainScene extends Phaser.Scene {
 
     const body = this.createPrefabNode(root, 0.006000102, 0.19145268, -1.9272974, 1, 1.0584189);
     this.addPrefabSprite(body, 'playerPrefabBody', 0, 0, 0.41, 0.45, { tint: PLAYER_PREFAB_SKIN_TINT }); 
-    this.addPrefabSprite(body, 'playerPrefabChest', 0, 0, 0.78, 0.7);
+    this.playerChestSprite = this.addPrefabSprite(body, 'playerPrefabChestOuter', 0, 0, 0.78, 0.7);
 
     const head = this.createPrefabNode(body, -0.039657928, 0.3265895, -0.0395905);
     this.addPrefabSprite(head, 'playerPrefabHead', 0, 0, 0.65, 0.5, { tint: PLAYER_PREFAB_SKIN_TINT });
     const normalEye = this.addPrefabSprite(head, 'playerPrefabEye', 0.13499999, -0.054999948, 0.55, 0.32);
-    this.addPrefabSprite(head, 'playerPrefabHair', 0.025000036, 0.024999976, 0.98, 1);
+    this.playerHairSprite = this.addPrefabSprite(head, 'playerPrefabHair1', 0.025000036, 0.024999976, 0.98, 1);
     // this.addPrefabSprite(head, 'playerPrefabHair', 0.025000036, 0.024999976, 0.98, 1, {
     //   tint: PLAYER_PREFAB_HAIR_TINT
     // });
@@ -2929,12 +2954,12 @@ class MainScene extends Phaser.Scene {
 
     const body = this.createPrefabNode(root, 0.006000102, 0.19145268, -1.9272974, 1, 1.0584189);
     this.addPrefabSprite(body, 'playerPrefabBody', 0, 0, 0.41, 0.45, { tint: 0xd8b4fe });
-    this.addPrefabSprite(body, 'playerPrefabChest', 0, 0, 0.78, 0.7);
+    this.secondPlayerChestSprite = this.addPrefabSprite(body, 'playerPrefabChestOuter', 0, 0, 0.78, 0.7);
 
     const head = this.createPrefabNode(body, -0.039657928, 0.3265895, -0.0395905);
     this.addPrefabSprite(head, 'playerPrefabHead', 0, 0, 0.65, 0.5, { tint: 0xd8b4fe });
     const normalEye = this.addPrefabSprite(head, 'playerPrefabEye', 0.13499999, -0.054999948, 0.55, 0.32);
-    this.addPrefabSprite(head, 'playerPrefabHair', 0.025000036, 0.024999976, 0.98, 1);
+    this.secondPlayerHairSprite = this.addPrefabSprite(head, 'playerPrefabHair2', 0.025000036, 0.024999976, 0.98, 1);
 
     const animatedEye = this.createPrefabNode(head, 0.13399993, -0.058999896);
     const stunEyeLeft = this.createPrefabNode(animatedEye, -0.082, 0.010999978);
@@ -3201,8 +3226,27 @@ class MainScene extends Phaser.Scene {
     return PLAYER_HAND_TOOL_ASSETS[handToolIndex]?.label === 'None';
   }
 
+  private isPlayerHoldingTool(playerId: PlayerId, label: string) {
+    const handToolIndex = playerId === 'player1' ? this.currentHandToolIndex : this.secondPlayerHandToolIndex;
+
+    return PLAYER_HAND_TOOL_ASSETS[handToolIndex]?.label === label;
+  }
+
   private handlePlayerAction(playerId: PlayerId) {
+    if (this.isPlayerHoldingTool(playerId, 'Extinguisher')) {
+      if (!this.tryExtinguishFire(playerId)) {
+        this.dropPlayerExtinguisher(playerId);
+      }
+
+      return;
+    }
+
     if (this.tryStartPlayerInteraction(playerId)) {
+      return;
+    }
+
+    if (this.canDropPlayerClothing(playerId)) {
+      this.dropPlayerClothing(playerId);
       return;
     }
 
@@ -3259,6 +3303,319 @@ class MainScene extends Phaser.Scene {
 
   private isInteractionState(state: PlayerState) {
     return state !== 'Normal' && state !== 'Climbing';
+  }
+
+  private tryExtinguishFire(playerId: PlayerId) {
+    const player = this.getPlayerById(playerId);
+
+    if (!player) {
+      return false;
+    }
+
+    const fireRoom = this.getOverlappingBurningRoom(player.x, player.y);
+
+    if (!fireRoom) {
+      return false;
+    }
+
+    this.setFireRoomNormal(fireRoom);
+    return true;
+  }
+
+  private getOverlappingBurningRoom(x: number, y: number): FireRoomId | undefined {
+    if (this.currentDriveRoomOption === 'Wrong' && this.overlapsRoom(DRIVE_ROOM_CONFIG, x, y)) {
+      return 'drive';
+    }
+
+    if (this.currentLivingRoomOption === 'Wrong' && this.overlapsRoom(LIVING_ROOM_CONFIG, x, y)) {
+      return 'living';
+    }
+
+    if (this.currentPlantRoomOption === 'Wrong' && this.overlapsRoom(PLANT_ROOM_CONFIG, x, y)) {
+      return 'plant';
+    }
+
+    return undefined;
+  }
+
+  private setFireRoomNormal(roomId: FireRoomId) {
+    if (roomId === 'drive') {
+      this.setDriveRoomOption('Normal');
+      return;
+    }
+
+    if (roomId === 'living') {
+      this.setLivingRoomOption('Normal');
+      return;
+    }
+
+    this.setPlantRoomOption('Normal');
+  }
+
+  private dropPlayerExtinguisher(playerId: PlayerId) {
+    const player = this.getPlayerById(playerId);
+
+    if (!player) {
+      return;
+    }
+
+    const sprite = this.add
+      .image(player.x, player.y, 'playerHandToolFireExtinguisher')
+      .setDisplaySize(DROPPED_EXTINGUISHER_WIDTH, DROPPED_EXTINGUISHER_HEIGHT);
+    const droppedExtinguisher = { x: player.x, y: player.y, sprite };
+
+    this.droppedExtinguishers.push(droppedExtinguisher);
+
+    if (playerId === 'player1') {
+      this.setPlayerHandToolByLabel('None');
+    } else {
+      this.setSecondPlayerHandToolByLabel('None');
+    }
+  }
+
+  private updateDroppedExtinguisherPickups(delta: number) {
+    this.updateDroppedExtinguisherPickupForPlayer('player1', delta);
+    this.updateDroppedExtinguisherPickupForPlayer('player2', delta);
+    this.updateDroppedClothingPickups(delta);
+  }
+
+  private updateDroppedExtinguisherPickupForPlayer(playerId: PlayerId, delta: number) {
+    const player = this.getPlayerById(playerId);
+
+    if (!player || !this.isPlayerHandEmpty(playerId)) {
+      this.resetExtinguisherPickup(playerId);
+      return;
+    }
+
+    const droppedExtinguisher = this.findOverlappingDroppedExtinguisher(player);
+
+    if (!droppedExtinguisher) {
+      this.resetExtinguisherPickup(playerId);
+      return;
+    }
+
+    const currentTarget = playerId === 'player1' ? this.playerPickupExtinguisher : this.secondPlayerPickupExtinguisher;
+    const nextProgress = (currentTarget === droppedExtinguisher ? this.getExtinguisherPickupProgress(playerId) : 0) +
+      DROPPED_EXTINGUISHER_PICKUP_PROGRESS_PER_SECOND * (delta / 1000);
+
+    this.setExtinguisherPickupTarget(playerId, droppedExtinguisher, nextProgress);
+
+    if (nextProgress < 1) {
+      return;
+    }
+
+    this.pickUpDroppedExtinguisher(playerId, droppedExtinguisher);
+  }
+
+  private findOverlappingDroppedExtinguisher(player: Phaser.GameObjects.Graphics) {
+    return this.droppedExtinguishers.find((droppedExtinguisher) =>
+      Math.abs(player.x - droppedExtinguisher.x) <= (PLAYER_WIDTH + DROPPED_EXTINGUISHER_WIDTH) / 2 &&
+      Math.abs(player.y - droppedExtinguisher.y) <= (PLAYER_HEIGHT + DROPPED_EXTINGUISHER_HEIGHT) / 2
+    );
+  }
+
+  private getExtinguisherPickupProgress(playerId: PlayerId) {
+    return playerId === 'player1' ? this.playerExtinguisherPickupProgress : this.secondPlayerExtinguisherPickupProgress;
+  }
+
+  private setExtinguisherPickupTarget(playerId: PlayerId, droppedExtinguisher: DroppedExtinguisher, progress: number) {
+    if (playerId === 'player1') {
+      this.playerPickupExtinguisher = droppedExtinguisher;
+      this.playerExtinguisherPickupProgress = Phaser.Math.Clamp(progress, 0, 1);
+      this.updatePlayerProgressBar();
+      return;
+    }
+
+    this.secondPlayerPickupExtinguisher = droppedExtinguisher;
+    this.secondPlayerExtinguisherPickupProgress = Phaser.Math.Clamp(progress, 0, 1);
+    this.updateSecondPlayerProgressBar();
+  }
+
+  private resetExtinguisherPickup(playerId: PlayerId) {
+    if (playerId === 'player1') {
+      if (this.playerExtinguisherPickupProgress === 0 && !this.playerPickupExtinguisher) {
+        return;
+      }
+
+      this.playerPickupExtinguisher = undefined;
+      this.playerExtinguisherPickupProgress = 0;
+      this.updatePlayerProgressBar();
+      return;
+    }
+
+    if (this.secondPlayerExtinguisherPickupProgress === 0 && !this.secondPlayerPickupExtinguisher) {
+      return;
+    }
+
+    this.secondPlayerPickupExtinguisher = undefined;
+    this.secondPlayerExtinguisherPickupProgress = 0;
+    this.updateSecondPlayerProgressBar();
+  }
+
+  private pickUpDroppedExtinguisher(playerId: PlayerId, droppedExtinguisher: DroppedExtinguisher) {
+    const index = this.droppedExtinguishers.indexOf(droppedExtinguisher);
+
+    if (index !== -1) {
+      this.droppedExtinguishers.splice(index, 1);
+    }
+
+    droppedExtinguisher.sprite.destroy();
+
+    if (this.playerPickupExtinguisher === droppedExtinguisher) {
+      this.resetExtinguisherPickup('player1');
+    }
+
+    if (this.secondPlayerPickupExtinguisher === droppedExtinguisher) {
+      this.resetExtinguisherPickup('player2');
+    }
+
+    if (playerId === 'player1') {
+      this.setPlayerHandToolByLabel('Extinguisher');
+    } else {
+      this.setSecondPlayerHandToolByLabel('Extinguisher');
+    }
+  }
+
+  private canDropPlayerClothing(playerId: PlayerId) {
+    return this.isPlayerInsideShipById(playerId) && this.isPlayerHandEmpty(playerId) && this.isPlayerWearingOwnClothing(playerId);
+  }
+
+  private isPlayerInsideShipById(playerId: PlayerId) {
+    return playerId === 'player1' ? this.isPlayerInsideShip : this.isSecondPlayerInsideShip;
+  }
+
+  private isPlayerWearingOwnClothing(playerId: PlayerId) {
+    return playerId === 'player1' ? this.isPlayerWearingClothing : this.isSecondPlayerWearingClothing;
+  }
+
+  private dropPlayerClothing(playerId: PlayerId) {
+    const player = this.getPlayerById(playerId);
+
+    if (!player) {
+      return;
+    }
+
+    const chestKey = 'playerPrefabChestOuter';
+    const hairKey = playerId === 'player1' ? 'playerPrefabHair1' : 'playerPrefabHair2';
+    const chestSprite = this.add
+      .image(player.x - 18, player.y + 10, chestKey)
+      .setDisplaySize(DROPPED_CHEST_WIDTH, DROPPED_CHEST_HEIGHT);
+    const hairSprite = this.add
+      .image(player.x + 24, player.y - 18, hairKey)
+      .setDisplaySize(DROPPED_HAIR_WIDTH, DROPPED_HAIR_HEIGHT);
+
+    this.droppedClothingItems.push({ playerId, x: player.x, y: player.y, chestSprite, hairSprite });
+    this.setPlayerClothingWorn(playerId, false);
+  }
+
+  private updateDroppedClothingPickups(delta: number) {
+    this.updateDroppedClothingPickupForPlayer('player1', delta);
+    this.updateDroppedClothingPickupForPlayer('player2', delta);
+  }
+
+  private updateDroppedClothingPickupForPlayer(playerId: PlayerId, delta: number) {
+    const player = this.getPlayerById(playerId);
+
+    if (!player || this.isPlayerWearingOwnClothing(playerId)) {
+      this.resetClothingPickup(playerId);
+      return;
+    }
+
+    const droppedClothing = this.findOverlappingDroppedClothing(playerId, player);
+
+    if (!droppedClothing) {
+      this.resetClothingPickup(playerId);
+      return;
+    }
+
+    const currentTarget = playerId === 'player1' ? this.playerPickupClothing : this.secondPlayerPickupClothing;
+    const nextProgress = (currentTarget === droppedClothing ? this.getClothingPickupProgress(playerId) : 0) +
+      DROPPED_CLOTHING_PICKUP_PROGRESS_PER_SECOND * (delta / 1000);
+
+    this.setClothingPickupTarget(playerId, droppedClothing, nextProgress);
+
+    if (nextProgress < 1) {
+      return;
+    }
+
+    this.pickUpDroppedClothing(playerId, droppedClothing);
+  }
+
+  private findOverlappingDroppedClothing(playerId: PlayerId, player: Phaser.GameObjects.Graphics) {
+    return this.droppedClothingItems.find((droppedClothing) =>
+      droppedClothing.playerId === playerId &&
+      Math.abs(player.x - droppedClothing.x) <= (PLAYER_WIDTH + DROPPED_CHEST_WIDTH) / 2 &&
+      Math.abs(player.y - droppedClothing.y) <= (PLAYER_HEIGHT + DROPPED_CHEST_HEIGHT) / 2
+    );
+  }
+
+  private getClothingPickupProgress(playerId: PlayerId) {
+    return playerId === 'player1' ? this.playerClothingPickupProgress : this.secondPlayerClothingPickupProgress;
+  }
+
+  private setClothingPickupTarget(playerId: PlayerId, droppedClothing: DroppedClothing, progress: number) {
+    if (playerId === 'player1') {
+      this.playerPickupClothing = droppedClothing;
+      this.playerClothingPickupProgress = Phaser.Math.Clamp(progress, 0, 1);
+      this.updatePlayerProgressBar();
+      return;
+    }
+
+    this.secondPlayerPickupClothing = droppedClothing;
+    this.secondPlayerClothingPickupProgress = Phaser.Math.Clamp(progress, 0, 1);
+    this.updateSecondPlayerProgressBar();
+  }
+
+  private resetClothingPickup(playerId: PlayerId) {
+    if (playerId === 'player1') {
+      if (this.playerClothingPickupProgress === 0 && !this.playerPickupClothing) {
+        return;
+      }
+
+      this.playerPickupClothing = undefined;
+      this.playerClothingPickupProgress = 0;
+      this.updatePlayerProgressBar();
+      return;
+    }
+
+    if (this.secondPlayerClothingPickupProgress === 0 && !this.secondPlayerPickupClothing) {
+      return;
+    }
+
+    this.secondPlayerPickupClothing = undefined;
+    this.secondPlayerClothingPickupProgress = 0;
+    this.updateSecondPlayerProgressBar();
+  }
+
+  private pickUpDroppedClothing(playerId: PlayerId, droppedClothing: DroppedClothing) {
+    const index = this.droppedClothingItems.indexOf(droppedClothing);
+
+    if (index !== -1) {
+      this.droppedClothingItems.splice(index, 1);
+    }
+
+    droppedClothing.chestSprite.destroy();
+    droppedClothing.hairSprite.destroy();
+    this.resetClothingPickup(playerId);
+    this.setPlayerClothingWorn(playerId, true);
+  }
+
+  private setPlayerClothingWorn(playerId: PlayerId, isWearing: boolean) {
+    const chestKey = isWearing
+      ? 'playerPrefabChestOuter'
+      : playerId === 'player1' ? 'playerPrefabChest1' : 'playerPrefabChest2';
+    const hairKey = playerId === 'player1' ? 'playerPrefabHair1' : 'playerPrefabHair2';
+
+    if (playerId === 'player1') {
+      this.isPlayerWearingClothing = isWearing;
+      this.playerChestSprite?.setTexture(chestKey).setDisplaySize(0.78, 0.7);
+      this.playerHairSprite?.setVisible(isWearing).setTexture(hairKey).setDisplaySize(0.98, 1);
+      return;
+    }
+
+    this.isSecondPlayerWearingClothing = isWearing;
+    this.secondPlayerChestSprite?.setTexture(chestKey).setDisplaySize(0.78, 0.7);
+    this.secondPlayerHairSprite?.setVisible(isWearing).setTexture(hairKey).setDisplaySize(0.98, 1);
   }
 
   private findClosestAlien(player: Phaser.GameObjects.Graphics, maxDistance: number) {
@@ -3745,26 +4102,47 @@ class MainScene extends Phaser.Scene {
     }
 
     if (!this.isRepairingState(this.secondPlayerState)) {
-      this.secondPlayerProgressBar.clear().setVisible(false);
+      const pickupProgress = Math.max(this.secondPlayerExtinguisherPickupProgress, this.secondPlayerClothingPickupProgress);
+
+      if (pickupProgress <= 0) {
+        this.secondPlayerProgressBar.clear().setVisible(false);
+        return;
+      }
+
+      this.drawProgressCircle(
+        this.secondPlayerProgressBar,
+        this.secondPlayer,
+        pickupProgress,
+        0xa78bfa
+      );
       return;
     }
 
-    this.secondPlayerProgressBar
+    this.drawProgressCircle(this.secondPlayerProgressBar, this.secondPlayer, this.secondPlayerProgress, 0xa78bfa);
+  }
+
+  private drawProgressCircle(
+    progressBar: Phaser.GameObjects.Graphics,
+    player: Phaser.GameObjects.Graphics,
+    progress: number,
+    color: number
+  ) {
+    progressBar
       .setVisible(true)
-      .setPosition(this.secondPlayer.x + PLAYER_PROGRESS_OFFSET_X, this.secondPlayer.y + PLAYER_PROGRESS_OFFSET_Y)
+      .setPosition(player.x + PLAYER_PROGRESS_OFFSET_X, player.y + PLAYER_PROGRESS_OFFSET_Y)
       .clear()
       .fillStyle(0x000000, 0.75)
       .fillCircle(0, 0, PLAYER_PROGRESS_RADIUS + PLAYER_PROGRESS_LINE_WIDTH)
       .lineStyle(PLAYER_PROGRESS_LINE_WIDTH, 0x475569, 1)
       .strokeCircle(0, 0, PLAYER_PROGRESS_RADIUS)
-      .lineStyle(PLAYER_PROGRESS_LINE_WIDTH, 0xa78bfa, 1)
+      .lineStyle(PLAYER_PROGRESS_LINE_WIDTH, color, 1)
       .beginPath()
       .arc(
         0,
         0,
         PLAYER_PROGRESS_RADIUS,
         -Math.PI / 2,
-        -Math.PI / 2 + Math.PI * 2 * this.secondPlayerProgress,
+        -Math.PI / 2 + Math.PI * 2 * Phaser.Math.Clamp(progress, 0, 1),
         false
       )
       .strokePath();
@@ -3878,30 +4256,25 @@ class MainScene extends Phaser.Scene {
     }
 
     if (!this.isRepairingState(this.playerState)) {
-      this.playerProgressBar.clear().setVisible(false);
+      const pickupProgress = Math.max(this.playerExtinguisherPickupProgress, this.playerClothingPickupProgress);
+
+      if (pickupProgress <= 0) {
+        this.playerProgressBar.clear().setVisible(false);
+        this.updateProgressSlider(this.playerProgress);
+        return;
+      }
+
+      this.drawProgressCircle(
+        this.playerProgressBar,
+        this.player,
+        pickupProgress,
+        0x22c55e
+      );
       this.updateProgressSlider(this.playerProgress);
       return;
     }
 
-    this.playerProgressBar
-      .setVisible(true)
-      .setPosition(this.player.x + PLAYER_PROGRESS_OFFSET_X, this.player.y + PLAYER_PROGRESS_OFFSET_Y)
-      .clear()
-      .fillStyle(0x000000, 0.75)
-      .fillCircle(0, 0, PLAYER_PROGRESS_RADIUS + PLAYER_PROGRESS_LINE_WIDTH)
-      .lineStyle(PLAYER_PROGRESS_LINE_WIDTH, 0x475569, 1)
-      .strokeCircle(0, 0, PLAYER_PROGRESS_RADIUS)
-      .lineStyle(PLAYER_PROGRESS_LINE_WIDTH, 0x22c55e, 1)
-      .beginPath()
-      .arc(
-        0,
-        0,
-        PLAYER_PROGRESS_RADIUS,
-        -Math.PI / 2,
-        -Math.PI / 2 + Math.PI * 2 * this.playerProgress,
-        false
-      )
-      .strokePath();
+    this.drawProgressCircle(this.playerProgressBar, this.player, this.playerProgress, 0x22c55e);
 
     this.updateProgressSlider(this.playerProgress);
   }
