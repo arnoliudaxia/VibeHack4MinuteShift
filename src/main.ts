@@ -94,6 +94,11 @@ const ASTEROID_ASSETS: AsteroidAsset[] = [
   { key: 'iceCrystal', path: '/assets/scene/SpcaeElements/冰晶.png', lockAlpha: true, collisionKind: 'iceCrystal' }
 ];
 
+const PLAYER_HAND_TOOL_ASSETS: PlayerHandToolAsset[] = [
+  { key: 'playerHandToolBow', label: 'Bow', path: '/assets/player-prefab/handTool/bow.png' },
+  { key: 'playerHandToolFireExtinguisher', label: 'Extinguisher', path: '/assets/player-prefab/handTool/fireExtinguisher.png' }
+];
+
 // 操控
 
 type PlayerKeys = {
@@ -141,6 +146,12 @@ type PlayerStateTransitionContext = {
 };
 
 type PlayerStateTransition = (context: PlayerStateTransitionContext) => PlayerState;
+
+type PlayerHandToolAsset = {
+  key: string;
+  label: string;
+  path: string;
+};
 
 type RoomLayerOption = {
   label: string;
@@ -791,6 +802,9 @@ class MainScene extends Phaser.Scene {
   private playerPrefabVisual?: Phaser.GameObjects.Container;
   private playerPrefabAnimationNodes?: PrefabAnimationNodes;
   private playerPrefabAnimationSprites?: PrefabAnimationSprites;
+  private playerHandToolSprite?: PrefabAnimationSprite;
+  private currentHandToolIndex = 0;
+  private handToolSelectedText?: Phaser.GameObjects.Text;
   private playerPrefabAnimationState: PlayerPrefabAnimationName = 'Idle';
   private playerPrefabAnimationTime = 0;
   private keys?: PlayerKeys;
@@ -919,6 +933,9 @@ class MainScene extends Phaser.Scene {
       this.load.image(key, `/assets/Sprite/Crystal Drain-cached-frames/frame_${frameNumber}.png`);
     });
     ASTEROID_ASSETS.forEach((asset) => {
+      this.load.image(asset.key, asset.path);
+    });
+    PLAYER_HAND_TOOL_ASSETS.forEach((asset) => {
       this.load.image(asset.key, asset.path);
     });
     ROOM_CONFIGS.forEach((room) => {
@@ -1108,38 +1125,38 @@ class MainScene extends Phaser.Scene {
     const panel = this.add.container(16, 16).setScrollFactor(0);
     this.uiPanel = panel;
     const panelBackground = this.add
-      .rectangle(0, 0, 220, 704, 0x0f172a, 0.82)
+      .rectangle(0, 0, 220, 748, 0x0f172a, 0.82)
       .setOrigin(0);
     const playerGroupLabel = this.add.text(14, 16, 'Player', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '18px',
       color: '#93c5fd'
     });
-    const soundLabel = this.add.text(14, 312, 'BGM', {
+    const soundLabel = this.add.text(14, 356, 'BGM', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '16px',
       color: '#ffffff'
     });
     const muteButton = this.add
-      .rectangle(PANEL_CONTROL_X, 307, PANEL_CONTROL_WIDTH, 28, 0x475569, 1)
+      .rectangle(PANEL_CONTROL_X, 351, PANEL_CONTROL_WIDTH, 28, 0x475569, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
-    const muteText = this.add.text(119, 313, 'Muted', {
+    const muteText = this.add.text(119, 357, 'Muted', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '14px',
       color: '#ffffff'
     });
 
-    const collisionLabel = this.add.text(14, 356, 'Collision', {
+    const collisionLabel = this.add.text(14, 400, 'Collision', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '16px',
       color: '#ffffff'
     });
     const collisionButton = this.add
-      .rectangle(PANEL_CONTROL_X, 351, PANEL_CONTROL_WIDTH, 28, 0x475569, 1)
+      .rectangle(PANEL_CONTROL_X, 395, PANEL_CONTROL_WIDTH, 28, 0x475569, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
-    const collisionText = this.add.text(127, 357, 'Hidden', {
+    const collisionText = this.add.text(127, 401, 'Hidden', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '14px',
       color: '#ffffff'
@@ -1189,16 +1206,16 @@ class MainScene extends Phaser.Scene {
       color: '#ffffff'
     });
 
-    const shipFireLabel = this.add.text(14, 400, 'Ship Fire', {
+    const shipFireLabel = this.add.text(14, 444, 'Ship Fire', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '16px',
       color: '#ffffff'
     });
     const shipFireButton = this.add
-      .rectangle(PANEL_CONTROL_X, 395, PANEL_CONTROL_WIDTH, 32, 0x475569, 1)
+      .rectangle(PANEL_CONTROL_X, 439, PANEL_CONTROL_WIDTH, 32, 0x475569, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
-    const shipFireText = this.add.text(127, 402, 'Hidden', {
+    const shipFireText = this.add.text(127, 446, 'Hidden', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#ffffff'
@@ -1228,24 +1245,24 @@ class MainScene extends Phaser.Scene {
     this.input.setDraggable(this.progressSliderHandle);
     this.updateProgressSlider(0);
 
-    const sceneGroupLabel = this.add.text(14, 274, 'Scene', {
+    const sceneGroupLabel = this.add.text(14, 318, 'Scene', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '18px',
       color: '#93c5fd'
     });
 
-    const label = this.add.text(14, 444, DRIVE_ROOM_CONFIG.label, {
+    const label = this.add.text(14, 488, DRIVE_ROOM_CONFIG.label, {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '16px',
       color: '#ffffff'
     });
 
     const selectedBackground = this.add
-      .rectangle(PANEL_CONTROL_X, 439, PANEL_CONTROL_WIDTH, 32, 0x22c55e, 1)
+      .rectangle(PANEL_CONTROL_X, 483, PANEL_CONTROL_WIDTH, 32, 0x22c55e, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
     this.driveStateButton = selectedBackground;
-    const selectedText = this.add.text(104, 446, 'Normal', {
+    const selectedText = this.add.text(104, 490, 'Normal', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#ffffff'
@@ -1264,67 +1281,81 @@ class MainScene extends Phaser.Scene {
     });
     this.updatePlayerCoordinateUi();
 
-    const outerLabel = this.add.text(14, 488, 'Outer', {
+    const outerLabel = this.add.text(14, 532, 'Outer', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '16px',
       color: '#ffffff'
     });
     this.outerRepairButton = this.add
-      .rectangle(PANEL_CONTROL_X, 483, PANEL_CONTROL_WIDTH, 32, 0x475569, 1)
+      .rectangle(PANEL_CONTROL_X, 527, PANEL_CONTROL_WIDTH, 32, 0x475569, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
-    this.outerRepairText = this.add.text(126, 490, 'Normal', {
+    this.outerRepairText = this.add.text(126, 534, 'Normal', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#ffffff'
     });
     this.updateOuterWrongUi();
 
-    const repoLabel = this.add.text(14, 532, REPO_ROOM_CONFIG.label, {
+    const repoLabel = this.add.text(14, 576, REPO_ROOM_CONFIG.label, {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '16px',
       color: '#ffffff'
     });
     this.repoStateButton = this.add
-      .rectangle(PANEL_CONTROL_X, 527, PANEL_CONTROL_WIDTH, 32, 0x22c55e, 1)
+      .rectangle(PANEL_CONTROL_X, 571, PANEL_CONTROL_WIDTH, 32, 0x22c55e, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
-    this.repoSelectedText = this.add.text(126, 534, 'Full', {
+    this.repoSelectedText = this.add.text(126, 578, 'Full', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#ffffff'
     });
 
-    const powerCrystalLabel = this.add.text(14, 576, 'Crystal', {
+    const powerCrystalLabel = this.add.text(14, 620, 'Crystal', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '16px',
       color: '#ffffff'
     });
     const powerCrystalButton = this.add
-      .rectangle(PANEL_CONTROL_X, 571, PANEL_CONTROL_WIDTH, 32, 0x2563eb, 1)
+      .rectangle(PANEL_CONTROL_X, 615, PANEL_CONTROL_WIDTH, 32, 0x2563eb, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
-    const powerCrystalText = this.add.text(133, 578, 'Play', {
+    const powerCrystalText = this.add.text(133, 622, 'Play', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#ffffff'
     });
 
-    const utilityGroupLabel = this.add.text(14, 620, 'Utility', {
+    const utilityGroupLabel = this.add.text(14, 664, 'Utility', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '18px',
       color: '#93c5fd'
     });
-    const screenshotLabel = this.add.text(14, 660, 'Screenshot', {
+    const screenshotLabel = this.add.text(14, 704, 'Screenshot', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#ffffff'
     });
     const screenshotButton = this.add
-      .rectangle(PANEL_CONTROL_X, 655, PANEL_CONTROL_WIDTH, 32, 0x0ea5e9, 1)
+      .rectangle(PANEL_CONTROL_X, 699, PANEL_CONTROL_WIDTH, 32, 0x0ea5e9, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
-    const screenshotText = this.add.text(133, 662, 'Save', {
+    const screenshotText = this.add.text(133, 706, 'Save', {
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: '15px',
+      color: '#ffffff'
+    });
+    const handToolLabel = this.add.text(14, 274, 'Hand Tool', {
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: '15px',
+      color: '#ffffff'
+    });
+    const handToolButton = this.add
+      .rectangle(PANEL_CONTROL_X, 269, PANEL_CONTROL_WIDTH, 32, 0x7c3aed, 1)
+      .setOrigin(0)
+      .setInteractive({ useHandCursor: true });
+    this.handToolSelectedText = this.add.text(132, 276, PLAYER_HAND_TOOL_ASSETS[this.currentHandToolIndex].label, {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#ffffff'
@@ -1355,6 +1386,9 @@ class MainScene extends Phaser.Scene {
       this.progressSliderFill,
       this.progressSliderHandle,
       this.progressSliderText,
+      handToolLabel,
+      handToolButton,
+      this.handToolSelectedText,
       sceneGroupLabel,
       label,
       selectedBackground,
@@ -1390,6 +1424,10 @@ class MainScene extends Phaser.Scene {
 
     screenshotButton.on('pointerdown', () => {
       this.captureScreenshot();
+    });
+
+    handToolButton.on('pointerdown', () => {
+      this.cyclePlayerHandTool();
     });
 
     animationButton.on('pointerdown', () => {
@@ -1505,6 +1543,24 @@ class MainScene extends Phaser.Scene {
       link.download = `gamejam-screenshot-${timestamp}.png`;
       link.click();
     });
+  }
+
+  private cyclePlayerHandTool() {
+    this.setPlayerHandTool((this.currentHandToolIndex + 1) % PLAYER_HAND_TOOL_ASSETS.length);
+  }
+
+  private setPlayerHandTool(index: number) {
+    if (!this.playerHandToolSprite) {
+      return;
+    }
+
+    const nextIndex = Phaser.Math.Wrap(index, 0, PLAYER_HAND_TOOL_ASSETS.length);
+    const asset = PLAYER_HAND_TOOL_ASSETS[nextIndex];
+
+    this.currentHandToolIndex = nextIndex;
+    this.playerHandToolSprite.setTexture(asset.key).setDisplaySize(1.32, 0.73);
+    this.handToolSelectedText?.setText(asset.label);
+    this.handToolSelectedText?.setX(asset.label.length > 6 ? 103 : 132);
   }
 
   update(time: number, delta: number) {
@@ -1651,7 +1707,14 @@ class MainScene extends Phaser.Scene {
 
 
     // this.addPrefabSprite(handLeft, 'playerPrefabShield', 0.29100013, 0.13100004, 0.52, 0.58); // TODO 右手暂时隐藏
-    this.addPrefabSprite(bow, 'playerPrefabBow', 0, 0, 1.32, 0.73); // TODO 弓箭暂时隐藏
+    this.playerHandToolSprite = this.addPrefabSprite(
+      bow,
+      PLAYER_HAND_TOOL_ASSETS[this.currentHandToolIndex].key,
+      0,
+      0,
+      1.32,
+      0.73
+    );
     const arrow = this.createPrefabNode(bow, 0.005, -0.211, -90);
     const arrowSprite = this.addPrefabSprite(arrow, 'playerPrefabArrow', 0, 0, 0.88, 0.36, { alpha: 0 });
 
