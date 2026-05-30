@@ -91,6 +91,7 @@ type PlayerKeys = {
   S: Phaser.Input.Keyboard.Key;
   D: Phaser.Input.Keyboard.Key;
   E: Phaser.Input.Keyboard.Key;
+  H: Phaser.Input.Keyboard.Key;
 };
 
 type VolumeSound = Phaser.Sound.BaseSound & {
@@ -232,6 +233,24 @@ const ROOM_CONFIGS: RoomConfig[] = [
     ]
   },
   {
+    id: 'plant',
+    label: 'Plant',
+    defaultTextureKey: 'plant',
+    maskTextureKey: 'plant',
+    layerOptions: [
+      { label: 'Normal', textureKey: 'plant', assetPath: '/assets/scene/ShipRoom/plant.png' }
+    ]
+  },
+  {
+    id: 'tube',
+    label: 'Tube',
+    defaultTextureKey: 'tube',
+    maskTextureKey: 'tube',
+    layerOptions: [
+      { label: 'Normal', textureKey: 'tube', assetPath: '/assets/scene/ShipRoom/Tube.png' }
+    ]
+  },
+  {
     id: 'repo',
     label: 'Repo',
     defaultTextureKey: 'repoFull',
@@ -247,6 +266,8 @@ const DRIVE_ROOM_CONFIG = ROOM_CONFIGS.find((room) => room.id === 'drive') ?? RO
 const HEAL_ROOM_CONFIG = ROOM_CONFIGS.find((room) => room.id === 'heal') ?? ROOM_CONFIGS[0];
 const WORKSHOP_ROOM_CONFIG = ROOM_CONFIGS.find((room) => room.id === 'workshop') ?? ROOM_CONFIGS[0];
 const LIVING_ROOM_CONFIG = ROOM_CONFIGS.find((room) => room.id === 'living') ?? ROOM_CONFIGS[0];
+const PLANT_ROOM_CONFIG = ROOM_CONFIGS.find((room) => room.id === 'plant') ?? ROOM_CONFIGS[0];
+const TUBE_ROOM_CONFIG = ROOM_CONFIGS.find((room) => room.id === 'tube') ?? ROOM_CONFIGS[0];
 const REPO_ROOM_CONFIG = ROOM_CONFIGS.find((room) => room.id === 'repo') ?? ROOM_CONFIGS[0];
 
 const PLAYER_PREFAB_ANIMATION_NAMES: PlayerPrefabAnimationName[] = [
@@ -730,6 +751,8 @@ class MainScene extends Phaser.Scene {
   private playerPrefabAnimationState: PlayerPrefabAnimationName = 'Idle';
   private playerPrefabAnimationTime = 0;
   private keys?: PlayerKeys;
+  private uiPanel?: Phaser.GameObjects.Container;
+  private isUiPanelVisible = true;
   private driveOverlay?: Phaser.GameObjects.Image;
   private repoOverlay?: Phaser.GameObjects.Image;
   private outerWrongOverlay?: Phaser.GameObjects.Image;
@@ -781,7 +804,7 @@ class MainScene extends Phaser.Scene {
     this.load.image('spaceBg1', '/assets/scene/spaceBg/星空1.png');
     this.load.image('spaceBg2', '/assets/scene/spaceBg/星空2.png');
     this.load.image('spaceE', '/assets/scene/spaceBg/spaceE.png');
-    this.load.image('spaceShipFire', '/assets/scene/spaceShipFire.png');
+    this.load.image('spaceShipFire', '/assets/VFX/fireV.png');
     this.load.image('background', '/assets/scene/spaceShip.png');
     this.load.image('collision', '/assets/scene/physic.png');
     this.load.image('outerWrong', '/assets/scene/ShipRoom/OuterWrong.png');
@@ -845,6 +868,14 @@ class MainScene extends Phaser.Scene {
     const spaceShipFire = this.add.image(width / 2, height / 2, 'spaceShipFire');
     const fireScale = Math.max(width / spaceShipFire.width, height / spaceShipFire.height);
     spaceShipFire.setScale(fireScale).setScrollFactor(0).setVisible(false);
+    this.tweens.add({
+      targets: spaceShipFire,
+      x: width / 2 + 50,
+      duration: 2500,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut'
+    });
 
     const background = this.add.image(width / 2, height / 2, 'background');
     const scale = Math.max(width / background.width, height / background.height);
@@ -862,6 +893,16 @@ class MainScene extends Phaser.Scene {
 
     this.add
       .image(width / 2, height / 2, LIVING_ROOM_CONFIG.defaultTextureKey)
+      .setDisplaySize(SCENE_WIDTH * scale, SCENE_HEIGHT * scale)
+      .setVisible(true);
+
+    this.add
+      .image(width / 2, height / 2, PLANT_ROOM_CONFIG.defaultTextureKey)
+      .setDisplaySize(SCENE_WIDTH * scale, SCENE_HEIGHT * scale)
+      .setVisible(true);
+
+    this.add
+      .image(width / 2, height / 2, TUBE_ROOM_CONFIG.defaultTextureKey)
       .setDisplaySize(SCENE_WIDTH * scale, SCENE_HEIGHT * scale)
       .setVisible(true);
 
@@ -918,7 +959,7 @@ class MainScene extends Phaser.Scene {
     this.collisionBodyDebug = this.add.graphics().setVisible(false).setDepth(1000);
     this.exposePlayerAnimationInterface();
 
-    this.keys = this.input.keyboard?.addKeys('W,A,S,D,E') as PlayerKeys | undefined;
+    this.keys = this.input.keyboard?.addKeys('W,A,S,D,E,H') as PlayerKeys | undefined;
 
     this.add
       .rectangle(width - 16, 16, 126, 48, 0x000000, 1)
@@ -938,6 +979,7 @@ class MainScene extends Phaser.Scene {
       .setScrollFactor(0);
 
     const panel = this.add.container(16, 16).setScrollFactor(0);
+    this.uiPanel = panel;
     const panelBackground = this.add
       .rectangle(0, 0, 220, 580, 0x0f172a, 0.82)
       .setOrigin(0);
@@ -1258,9 +1300,22 @@ class MainScene extends Phaser.Scene {
     });
   }
 
+  private toggleUiPanelVisibility() {
+    if (!this.uiPanel) {
+      return;
+    }
+
+    this.isUiPanelVisible = !this.isUiPanelVisible;
+    this.uiPanel.setVisible(this.isUiPanelVisible);
+  }
+
   update(time: number, delta: number) {
     this.updateAsteroids(delta);
     this.updateDriveWarningSign(delta);
+
+    if (this.keys && Phaser.Input.Keyboard.JustDown(this.keys.H)) {
+      this.toggleUiPanelVisibility();
+    }
 
     if (!this.player || !this.keys) {
       this.updateCollisionBodyDebug();

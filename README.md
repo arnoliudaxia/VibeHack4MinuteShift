@@ -78,9 +78,9 @@ this.load.image('background', '/assets/scene/spaceShip.png');
 - 星空背景：`spaceBg/星空2.png` 与 `spaceBg/星空1.png` 循环切换。
 - 星空前景：`spaceBg/spaceE.png`。
 - 动态陨石层：运行时随机生成。
-- 飞船火焰层：`spaceShipFire.png`，由 UI 手动显示或隐藏。
+- 飞船火焰层：`VFX/fireV.png`，由 UI 手动显示或隐藏，并以 5 秒为周期在 X 轴向右 50px 后返回。
 - 飞船主体：`spaceShip.png`。
-- 房间图层：`heal.png`、`workshop.png`、`living.png`、`RepoFull.png` 或 `RepoEmpty.png`、`drive.png` 或 `driveFire.png`。
+- 房间图层：`heal.png`、`workshop.png`、`living.png`、`plant.png`、`Tube.png`、`RepoFull.png` 或 `RepoEmpty.png`、`drive.png` 或 `driveFire.png`。
 - 外部损坏层：`OuterWrong.png`，默认隐藏，上层陨石命中后显示。
 - 警告图标：`warningSign.png`、`warningSignRock.png`。
 - 玩家、玩家 UI、调试 UI。
@@ -101,6 +101,8 @@ this.load.image('background', '/assets/scene/spaceShip.png');
 - `Heal`：使用 `heal.png`，玩家进入该房间 alpha mask 后进入 `Healing` 状态。
 - `Workshop`：使用 `workshop.png`，当前只作为房间图层显示。
 - `Living`：使用 `living.png`，当前只作为房间图层显示。
+- `Plant`：使用 `plant.png`，当前只作为房间图层显示。
+- `Tube`：使用 `Tube.png`，当前只作为房间图层显示。
 - `Repo`：右下角房间，包含 `Full` 和 `Empty` 两种状态，默认显示 `RepoFull.png`，UI 按钮可切换为 `RepoEmpty.png`。
 - `OuterWrong`：使用 `OuterWrong.png`，不是 `ROOM_CONFIGS` 房间，使用 `isOuterWrong` 变量记录状态。上层陨石命中飞船后显示，UI 的 `Outer` 按钮可修复并隐藏。
 
@@ -152,7 +154,7 @@ const COLLISION_ALPHA_THRESHOLD = 16;
 - `collisionData`：由 `#FFFFFF` 像素生成，用于实体阻挡。
 - `ladderData`：由 `#FF0000` 像素生成，用于梯子区域检测。
 
-房间 alpha mask 会额外生成到 `roomMasks` 中。它们只用于房间状态检测，例如 Drive、Heal、Workshop、Living、Repo 的进入区域判断，不会参与 `collidesWithMap(...)` 的阻挡逻辑。
+房间 alpha mask 会额外生成到 `roomMasks` 中。它们只用于房间状态检测，例如 Drive、Heal、Workshop、Living、Plant、Tube、Repo 的进入区域判断，不会参与 `collidesWithMap(...)` 的阻挡逻辑。
 
 核心语义等价于：
 
@@ -307,7 +309,7 @@ prefab 视觉层维护独立动画状态机，默认状态为 `Idle`。动画状
 
 ### UI 面板
 
-左上角调试面板当前分为 `Player` 和 `Scene` 两个分组。
+左上角调试面板当前分为 `Player` 和 `Scene` 两个分组。按 `H` 可以显示或隐藏整个调试面板。
 
 `Player` 分组顺序：
 
@@ -321,7 +323,7 @@ prefab 视觉层维护独立动画状态机，默认状态为 `Idle`。动画状
 
 - `BGM`：切换静音或播放。
 - `Collision`：显示或隐藏碰撞调试层。
-- `Ship Fire`：显示或隐藏 `spaceShipFire.png`。
+- `Ship Fire`：显示或隐藏 `VFX/fireV.png` 火焰效果。
 - `Drive`：按钮切换 `Normal` 与 `Wrong`。
 - `Outer`：当外部损坏时可点击修复。
 - `Repo`：按钮切换右下角 Repo 房间的 `Full` 与 `Empty` 贴图。
