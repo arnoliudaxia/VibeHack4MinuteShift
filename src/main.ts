@@ -4,6 +4,50 @@ import './style.css';
 // 场景设置
 const SCENE_WIDTH = 1672;
 const SCENE_HEIGHT = 941;
+const GITHUB_ICON_SVG =
+  'data:image/svg+xml;utf8,' +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 98 96"><path fill="white" d="M49 0C21.9 0 0 22 0 49.1c0 21.7 14 40.1 33.5 46.6 2.5.5 3.3-1.1 3.3-2.4v-8.4c-13.6 3-16.5-6.6-16.5-6.6-2.2-5.7-5.4-7.2-5.4-7.2-4.5-3 .3-3 .3-3 4.9.4 7.5 5.1 7.5 5.1 4.4 7.5 11.5 5.3 14.3 4.1.4-3.2 1.7-5.3 3.1-6.6-10.9-1.2-22.3-5.4-22.3-24.2 0-5.3 1.9-9.7 5.1-13.1-.5-1.2-2.2-6.2.5-12.9 0 0 4.1-1.3 13.5 5 3.9-1.1 8.1-1.6 12.2-1.6s8.3.5 12.2 1.6c9.4-6.3 13.5-5 13.5-5 2.7 6.7 1 11.7.5 12.9 3.2 3.4 5.1 7.8 5.1 13.1 0 18.8-11.5 22.9-22.4 24.1 1.8 1.5 3.3 4.5 3.3 9.1v13.5c0 1.3.9 2.9 3.4 2.4C84 89.1 98 70.7 98 49.1 98 22 76.1 0 49 0Z"/></svg>'
+  );
+
+type CreatorProfile = {
+  name: string;
+  avatarKey: string;
+  githubUrl: string;
+};
+
+const CREATOR_PROFILES: CreatorProfile[] = [
+  {
+    name: 'shirai90',
+    avatarKey: 'creatorAvatarShirai90',
+    githubUrl: 'https://github.com/shirai90'
+  },
+  {
+    name: 'arnoliudaxia',
+    avatarKey: 'creatorAvatarArnoliudaxia',
+    githubUrl: 'https://github.com/arnoliudaxia'
+  }
+];
+
+const XBOX_BUTTON_NAMES = [
+  'A',
+  'B',
+  'X',
+  'Y',
+  'LB',
+  'RB',
+  'LT',
+  'RT',
+  'View',
+  'Menu',
+  'LS',
+  'RS',
+  'DPad Up',
+  'DPad Down',
+  'DPad Left',
+  'DPad Right',
+  'Xbox'
+];
 
 // player设置
 const PLAYER_WIDTH = 38;
@@ -15,6 +59,7 @@ const PLAYER_SPEED = 260;
 const PLAYER_GRAVITY = 1100;
 const PLAYER_MAX_FALL_SPEED = 900;
 const PLAYER_STEP_HEIGHT = 24;
+const GAMEPAD_DEAD_ZONE = 0.3;
 const PLAYER_PROGRESS_OFFSET_X = PLAYER_WIDTH / 2 + 22;
 const PLAYER_PROGRESS_OFFSET_Y = -PLAYER_HEIGHT / 2 - 16;
 const PLAYER_PROGRESS_RADIUS = 14;
@@ -51,7 +96,7 @@ const PLAYER_OUTSIDE_SHIP_X = 900;
 const PLAYER_OUTSIDE_SHIP_Y = 100;
 
 // 音乐设置
-const BGM_VOLUME = 0.45;
+const BGM_VOLUME = 0.95;
 // UI 设置
 const PANEL_CONTROL_X = 92;
 const PANEL_CONTROL_WIDTH = 112;
@@ -260,6 +305,7 @@ type SwapImpulseState = {
 };
 
 type PlayerPanelControls = {
+  container: Phaser.GameObjects.Container;
   infoText: Phaser.GameObjects.Text;
   animationText: Phaser.GameObjects.Text;
   progressFill: Phaser.GameObjects.Rectangle;
@@ -974,7 +1020,8 @@ class MainScene extends Phaser.Scene {
   private secondPlayerHandToolIndex = 0;
   private keys?: PlayerKeys;
   private uiPanel?: Phaser.GameObjects.Container;
-  private isUiPanelVisible = true;
+  private isUiPanelVisible = false;
+  private controlsHelpPanel?: Phaser.GameObjects.Container;
   private driveOverlay?: Phaser.GameObjects.Image;
   private livingOverlay?: Phaser.GameObjects.Image;
   private plantOverlay?: Phaser.GameObjects.Image;
@@ -1022,7 +1069,8 @@ class MainScene extends Phaser.Scene {
     iceCrystal: 0
   };
   private bgm?: VolumeSound;
-  private isBgmMuted = true;
+  private alarmSound?: Phaser.Sound.BaseSound;
+  private isBgmMuted = false;
   private isGravityEnabled = true;
   private playerVelocityY = 0;
   private playerSwapImpulse: SwapImpulseState = { x: 0, y: 0, remaining: 0 };
@@ -1035,12 +1083,12 @@ class MainScene extends Phaser.Scene {
   private playerState: PlayerState = 'Normal';
   private readonly playerStateTransitions: Record<PlayerState, PlayerStateTransition> = {
     Normal: (context) => {
-      if (context.isInsideHealRoom) {
-        return 'Healing';
-      }
-
       if (context.isTouchingLadder && context.isVerticalInputPressed) {
         return 'Climbing';
+      }
+
+      if (context.isInsideHealRoom) {
+        return 'Healing';
       }
 
       if (context.isOuterWrong && context.isInsideOuterWrongRoom) {
@@ -1068,7 +1116,13 @@ class MainScene extends Phaser.Scene {
 
       return 'Normal';
     },
-    Healing: (context) => context.isInsideHealRoom ? 'Healing' : 'Normal',
+    Healing: (context) => {
+      if (context.isTouchingLadder && context.isVerticalInputPressed) {
+        return 'Climbing';
+      }
+
+      return context.isInsideHealRoom ? 'Healing' : 'Normal';
+    },
     Driving: (context) => {
       if (context.isTouchingLadder && context.isVerticalInputPressed) {
         return 'Climbing';
@@ -1141,12 +1195,27 @@ class MainScene extends Phaser.Scene {
   private gameStartTime = 0;
   private displayedGameSeconds = -1;
   private randomRoomFireEvent?: Phaser.Time.TimerEvent;
+  private isGameStarted = false;
+  private menuContainer?: Phaser.GameObjects.Container;
+  private aboutContainer?: Phaser.GameObjects.Container;
+  private menuShip?: Phaser.GameObjects.Image;
+  private menuShipBaseX = 0;
+  private menuShipBaseY = 0;
+  private lastGamepadButtonStates = new Map<string, boolean>();
+  private lastGamepadAxisSnapshot = new Map<string, string>();
+  private hasLoggedNoGamepad = false;
+  private wasSecondPlayerGamepadActionPressed = false;
 
   constructor() {
     super('MainScene');
   }
 
   preload() {
+    this.load.image('menuSpace', '/assets/scene/space.png');
+    this.load.image('menuShip', '/assets/scene/spaceShip.png');
+    this.load.image('githubIcon', GITHUB_ICON_SVG);
+    this.load.image('creatorAvatarShirai90', 'https://avatars.githubusercontent.com/u/178642437?v=4');
+    this.load.image('creatorAvatarArnoliudaxia', 'https://avatars.githubusercontent.com/u/21056014?v=4');
     this.load.image('spaceBg1', '/assets/scene/spaceBg/星空1.png');
     this.load.image('spaceBg2', '/assets/scene/spaceBg/星空2.png');
     this.load.image('spaceE', '/assets/scene/spaceBg/spaceE.png');
@@ -1197,11 +1266,12 @@ class MainScene extends Phaser.Scene {
     this.load.image('playerPrefabEyeStun', '/assets/player-prefab/eye-stun.png');
     this.load.image('playerPrefabEyeDefeat', '/assets/player-prefab/eye-defeat.png');
     this.load.audio('bgm', '/assets/Sound/BGM/HOYO-MiX - 危机预知 Crises.mp3');
+    this.load.audio('alarmLoop', '/assets/Sound/警报长循环.mp3');
   }
 
   create() {
     const { width, height } = this.scale;
-    this.gameStartTime = this.time.now;
+    this.gameStartTime = 0;
     this.displayedGameSeconds = -1;
 
     const spaceBg2 = this.add.image(width / 2, height / 2, 'spaceBg2');
@@ -1360,8 +1430,9 @@ class MainScene extends Phaser.Scene {
 
     const collisionOverlay = this.createCollisionDebugOverlay(scale);
 
-    this.bgm = this.sound.add('bgm', { loop: true, volume: 0 }) as VolumeSound;
+    this.bgm = this.sound.add('bgm', { loop: true, volume: BGM_VOLUME }) as VolumeSound;
     this.bgm.play();
+    this.alarmSound = this.sound.add('alarmLoop', { loop: true, volume: 0.62 });
 
     this.player = this.add.graphics({ x: width / 2, y: height / 2 });
     this.player
@@ -1401,15 +1472,17 @@ class MainScene extends Phaser.Scene {
       RIGHT: Phaser.Input.Keyboard.KeyCodes.RIGHT,
       L: Phaser.Input.Keyboard.KeyCodes.L
     }) as SecondPlayerKeys | undefined;
+    this.initializeGamepadLogging();
 
     this.secondClock = this.add.graphics().setScrollFactor(0);
     this.drawSecondClock(0);
 
-    const controlsPanel = this.add.container(width - 16, height - 16).setScrollFactor(0);
+    const controlsPanel = this.add.container(width - 16, height - 16).setScrollFactor(0).setDepth(30001);
+    this.controlsHelpPanel = controlsPanel;
     const controlsBackground = this.add
-      .rectangle(0, 0, 346, 142, 0x0f172a, 0.82)
+      .rectangle(0, 0, 346, 184, 0x0f172a, 0.82)
       .setOrigin(1, 1);
-    const controlsTitle = this.add.text(-330, -128, '操作说明', {
+    const controlsTitle = this.add.text(-330, -170, '操作说明', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '18px',
       color: '#93c5fd'
@@ -1433,41 +1506,99 @@ class MainScene extends Phaser.Scene {
       return keycap;
     };
 
-    const playerColumnLabel = this.add.text(-330, -96, 'Player', {
+    const createGamepadButton = (label: string, x: number, y: number, color = 0x1e293b) => {
+      const button = this.add.container(x, y);
+      const background = this.add.circle(0, 0, 16, color, 1).setStrokeStyle(2, 0xcbd5e1, 1);
+      const text = this.add
+        .text(0, 0, label, {
+          fontFamily: 'Arial, Helvetica, sans-serif',
+          fontSize: '15px',
+          color: '#ffffff'
+        })
+        .setOrigin(0.5);
+
+      button.add([background, text]);
+
+      return button;
+    };
+
+    const createStickIcon = (x: number, y: number) => {
+      const stick = this.add.container(x, y);
+      const outer = this.add.circle(0, 0, 16, 0x1e293b, 1).setStrokeStyle(2, 0xcbd5e1, 1);
+      const inner = this.add.circle(0, 0, 7, 0x94a3b8, 1);
+      const label = this.add
+        .text(24, -8, 'LS', {
+          fontFamily: 'Arial, Helvetica, sans-serif',
+          fontSize: '13px',
+          color: '#cbd5e1'
+        })
+        .setOrigin(0, 0);
+
+      stick.add([outer, inner, label]);
+
+      return stick;
+    };
+
+    const createDpadIcon = (x: number, y: number) => {
+      const dpad = this.add.container(x, y);
+      const vertical = this.add.rectangle(0, 0, 18, 46, 0x1e293b, 1).setStrokeStyle(2, 0xcbd5e1, 1);
+      const horizontal = this.add.rectangle(0, 0, 46, 18, 0x1e293b, 1).setStrokeStyle(2, 0xcbd5e1, 1);
+      const label = this.add
+        .text(30, -10, 'D-Pad', {
+          fontFamily: 'Arial, Helvetica, sans-serif',
+          fontSize: '13px',
+          color: '#cbd5e1'
+        })
+        .setOrigin(0, 0);
+
+      dpad.add([vertical, horizontal, label]);
+
+      return dpad;
+    };
+
+    const playerColumnLabel = this.add.text(-330, -138, 'Player', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '14px',
       color: '#93c5fd'
     });
-    const moveColumnLabel = this.add.text(-246, -96, '移动', {
+    const moveColumnLabel = this.add.text(-246, -138, '移动', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '14px',
       color: '#93c5fd'
     });
-    const interactColumnLabel = this.add.text(-74, -96, '互动', {
+    const interactColumnLabel = this.add.text(-74, -138, '互动', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '14px',
       color: '#93c5fd'
     });
-    const playerOneLabel = this.add.text(-330, -68, 'P1', {
+    const playerOneLabel = this.add.text(-330, -110, 'P1', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#cbd5e1'
     });
-    const keyW = createKeycap('W', -246, -60);
-    const keyA = createKeycap('A', -208, -60);
-    const keyS = createKeycap('S', -170, -60);
-    const keyD = createKeycap('D', -132, -60);
-    const keyE = createKeycap('E', -64, -60);
-    const playerTwoLabel = this.add.text(-330, -26, 'P2', {
+    const keyW = createKeycap('W', -246, -102);
+    const keyA = createKeycap('A', -208, -102);
+    const keyS = createKeycap('S', -170, -102);
+    const keyD = createKeycap('D', -132, -102);
+    const keyE = createKeycap('E', -64, -102);
+    const playerTwoLabel = this.add.text(-330, -68, 'P2', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '15px',
       color: '#cbd5e1'
     });
-    const keyLeft = createKeycap('←', -246, -18);
-    const keyUp = createKeycap('↑', -208, -18);
-    const keyDown = createKeycap('↓', -170, -18);
-    const keyRight = createKeycap('→', -132, -18);
-    const keyL = createKeycap('L', -64, -18);
+    const keyLeft = createKeycap('←', -246, -60);
+    const keyUp = createKeycap('↑', -208, -60);
+    const keyDown = createKeycap('↓', -170, -60);
+    const keyRight = createKeycap('→', -132, -60);
+    const keyL = createKeycap('L', -64, -60);
+    const playerTwoGamepadLabel = this.add.text(-330, -26, 'P2 Pad', {
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: '15px',
+      color: '#cbd5e1'
+    });
+    const dpadIcon = createDpadIcon(-238, -18);
+    const stickIcon = createStickIcon(-190, -18);
+    const gamepadA = createGamepadButton('A', -64, -18, 0x16a34a);
 
     controlsPanel.add([
       controlsBackground,
@@ -1486,11 +1617,16 @@ class MainScene extends Phaser.Scene {
       keyUp,
       keyDown,
       keyRight,
-      keyL
+      keyL,
+      playerTwoGamepadLabel,
+      dpadIcon,
+      stickIcon,
+      gamepadA
     ]);
 
     const panel = this.add.container(16, 16).setScrollFactor(0);
     this.uiPanel = panel;
+    panel.setVisible(this.isUiPanelVisible);
     const panelBackground = this.add
       .rectangle(0, 0, 220, 752, 0x0f172a, 0.82)
       .setOrigin(0);
@@ -1505,10 +1641,10 @@ class MainScene extends Phaser.Scene {
       color: '#ffffff'
     });
     const muteButton = this.add
-      .rectangle(PANEL_CONTROL_X, 281, PANEL_CONTROL_WIDTH, 28, 0x475569, 1)
+      .rectangle(PANEL_CONTROL_X, 281, PANEL_CONTROL_WIDTH, 28, 0x22c55e, 1)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
-    const muteText = this.add.text(119, 287, 'Muted', {
+    const muteText = this.add.text(109, 287, 'Sound On', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '14px',
       color: '#ffffff'
@@ -1896,6 +2032,7 @@ class MainScene extends Phaser.Scene {
       ]);
 
       return {
+        container: playerInfoPanel,
         infoText: playerInfoText,
         animationText: panelAnimationText,
         progressFill: panelProgressFill,
@@ -1920,6 +2057,8 @@ class MainScene extends Phaser.Scene {
       (progress) => this.setSecondPlayerProgress(progress),
       () => this.cycleSecondPlayerHandTool()
     );
+    this.playerPanelControls.container.setVisible(this.isUiPanelVisible);
+    this.secondPlayerPanelControls.container.setVisible(this.isUiPanelVisible);
     this.playerInfoText = this.playerPanelControls.infoText;
     this.secondPlayerInfoText = this.secondPlayerPanelControls.infoText;
     this.updatePlayerInfoUi();
@@ -2131,17 +2270,11 @@ class MainScene extends Phaser.Scene {
     });
 
     gravityButton.on('pointerdown', () => {
-      if (this.playerState === 'Climbing') {
-        return;
-      }
-
-      this.isGravityEnabled = !this.isGravityEnabled;
-      this.playerVelocityY = 0;
-
+      this.syncGravityWithShipArea();
       this.updateGravityUi();
     });
 
-    this.scheduleNextRandomRoomFire();
+    this.createMainMenu();
   }
 
   private scheduleNextRandomRoomFire() {
@@ -2153,6 +2286,302 @@ class MainScene extends Phaser.Scene {
         this.scheduleNextRandomRoomFire();
       }
     );
+  }
+
+  private createMainMenu() {
+    const { width, height } = this.scale;
+    const menuDepth = 30000;
+    const menu = this.add.container(0, 0).setDepth(menuDepth).setScrollFactor(0);
+    const space = this.add.image(width / 2, height / 2, 'menuSpace');
+    const spaceScale = Math.max(width / space.width, height / space.height);
+
+    space.setScale(spaceScale).setScrollFactor(0);
+    this.menuShipBaseX = width / 2 + 250;
+    this.menuShipBaseY = height / 2 + 40;
+    this.menuShip = this.add
+      .image(this.menuShipBaseX, this.menuShipBaseY, 'menuShip')
+      .setScale(0.54)
+      .setAlpha(0.82)
+      .setScrollFactor(0);
+
+    const shade = this.add.rectangle(0, 0, width, height, 0x020617, 0.42).setOrigin(0).setScrollFactor(0).setInteractive();
+    const title = this.add
+      .text(width / 2, 110, 'Minute Shift:\nSpace Ops', {
+        fontFamily: '"Press Start 2P", "Courier New", monospace',
+        fontSize: '48px',
+        align: 'center',
+        color: '#dbeafe',
+        stroke: '#1e1b4b',
+        strokeThickness: 8,
+        shadow: { offsetX: 0, offsetY: 4, color: '#38bdf8', blur: 12, fill: true }
+      })
+      .setOrigin(0.5, 0);
+
+    const startButton = this.createMenuButton(width / 2, 330, '开始游戏', 0x22c55e, () => this.startGameFromMenu());
+    const aboutButton = this.createMenuButton(width / 2, 394, '关于', 0x3b82f6, () => this.showAboutPage());
+    menu.add([space, this.menuShip, shade, title, ...startButton, ...aboutButton]);
+    this.menuContainer = menu;
+    this.aboutContainer = this.createAboutPage(menuDepth + 1).setVisible(false);
+  }
+
+  private createMenuButton(x: number, y: number, label: string, color: number, onClick: () => void) {
+    const button = this.add
+      .rectangle(x, y, 260, 46, color, 0.92)
+      .setOrigin(0.5)
+      .setInteractive({ useHandCursor: true });
+    const text = this.add
+      .text(x, y, label, {
+        fontFamily: 'Arial, Helvetica, sans-serif',
+        fontSize: '22px',
+        color: '#ffffff',
+        stroke: '#020617',
+        strokeThickness: 4
+      })
+      .setOrigin(0.5);
+
+    button.on('pointerover', () => button.setScale(1.04));
+    button.on('pointerout', () => button.setScale(1));
+    button.on('pointerdown', onClick);
+
+    return [button, text];
+  }
+
+  private createAboutPage(depth: number) {
+    const { width, height } = this.scale;
+    const about = this.add.container(0, 0).setDepth(depth).setScrollFactor(0);
+    const background = this.add.rectangle(0, 0, width, height, 0x020617, 0.92).setOrigin(0).setInteractive();
+    const title = this.add
+      .text(width / 2, 96, '关于', {
+        fontFamily: '"Press Start 2P", "Courier New", monospace',
+        fontSize: '42px',
+        color: '#dbeafe',
+        stroke: '#1e1b4b',
+        strokeThickness: 7
+      })
+      .setOrigin(0.5, 0);
+    const subtitle = this.add
+      .text(width / 2, 178, '游戏制作人', {
+        fontFamily: 'Arial, Helvetica, sans-serif',
+        fontSize: '30px',
+        color: '#93c5fd'
+      })
+      .setOrigin(0.5, 0);
+    const children: Phaser.GameObjects.GameObject[] = [background, title, subtitle];
+
+    CREATOR_PROFILES.forEach((creator, index) => {
+      children.push(...this.createCreatorRow(width / 2 - 220, 270 + index * 130, creator));
+    });
+
+    const backButton = this.createMenuButton(width / 2, height - 105, '返回', 0x475569, () => this.showMainMenuPage());
+
+    about.add([...children, ...backButton]);
+    return about;
+  }
+
+  private createCreatorRow(x: number, y: number, creator: CreatorProfile) {
+    const avatarSize = 86;
+    const rowBackground = this.add
+      .rectangle(x - 34, y - 14, 508, 108, 0x0f172a, 0.88)
+      .setOrigin(0, 0)
+      .setStrokeStyle(1, 0x334155, 1);
+    const avatar = this.add.image(x + avatarSize / 2, y + avatarSize / 2, creator.avatarKey).setDisplaySize(avatarSize, avatarSize);
+    const avatarMaskShape = this.add.graphics().fillStyle(0xffffff, 1).fillCircle(x + avatarSize / 2, y + avatarSize / 2, avatarSize / 2);
+    const avatarRing = this.add.graphics().lineStyle(3, 0x93c5fd, 1).strokeCircle(x + avatarSize / 2, y + avatarSize / 2, avatarSize / 2);
+    const nameText = this.add
+      .text(x + 118, y + 16, creator.name, {
+        fontFamily: 'Arial, Helvetica, sans-serif',
+        fontSize: '26px',
+        color: '#ffffff'
+      })
+      .setInteractive({ useHandCursor: true });
+    const githubIcon = this.add
+      .image(x + 132, y + 62, 'githubIcon')
+      .setDisplaySize(28, 28)
+      .setInteractive({ useHandCursor: true });
+    const githubText = this.add
+      .text(x + 154, y + 49, creator.githubUrl, {
+        fontFamily: 'Arial, Helvetica, sans-serif',
+        fontSize: '16px',
+        color: '#93c5fd'
+      })
+      .setInteractive({ useHandCursor: true });
+    const openGithub = () => window.open(creator.githubUrl, '_blank', 'noopener,noreferrer');
+
+    avatar.setMask(avatarMaskShape.createGeometryMask());
+    avatarMaskShape.setVisible(false);
+    [nameText, githubIcon, githubText].forEach((gameObject) => gameObject.on('pointerdown', openGithub));
+
+    return [rowBackground, avatarMaskShape, avatar, avatarRing, nameText, githubIcon, githubText];
+  }
+
+  private showAboutPage() {
+    this.menuContainer?.setVisible(false);
+    this.controlsHelpPanel?.setVisible(false);
+    this.aboutContainer?.setVisible(true);
+  }
+
+  private showMainMenuPage() {
+    this.aboutContainer?.setVisible(false);
+    this.menuContainer?.setVisible(true);
+    this.controlsHelpPanel?.setVisible(true);
+  }
+
+  private startGameFromMenu() {
+    if (this.isGameStarted) {
+      return;
+    }
+
+    this.isGameStarted = true;
+    this.gameStartTime = this.time.now;
+    this.displayedGameSeconds = -1;
+    this.alienSpawnTimer = 0;
+    this.asteroidSpawnTimer = 0;
+    this.pixelAsteroidLaneSpawnTimer = 0;
+    this.swapClockSeconds = 0;
+    this.swapClockCompletedLaps = 0;
+    this.nextAlienSpawnDelay = Phaser.Math.Between(ALIEN_MIN_SPAWN_DELAY, ALIEN_MAX_SPAWN_DELAY);
+    this.nextAsteroidSpawnDelay = Phaser.Math.Between(ASTEROID_MIN_SPAWN_DELAY, ASTEROID_MAX_SPAWN_DELAY);
+    this.nextPixelAsteroidLaneSpawnDelay = Phaser.Math.Between(
+      PIXEL_ASTEROID_LANE_MIN_SPAWN_DELAY,
+      PIXEL_ASTEROID_LANE_MAX_SPAWN_DELAY
+    );
+    this.menuContainer?.setVisible(false);
+    this.aboutContainer?.setVisible(false);
+    this.controlsHelpPanel?.setVisible(false);
+    this.scheduleNextRandomRoomFire();
+  }
+
+  private updateMenuShipParallax() {
+    if (!this.menuShip || !this.menuContainer?.visible) {
+      return;
+    }
+
+    const pointer = this.input.activePointer;
+    const offsetX = (pointer.x / this.scale.width - 0.5) * 42;
+    const offsetY = (pointer.y / this.scale.height - 0.5) * 30;
+
+    this.menuShip.setPosition(this.menuShipBaseX + offsetX, this.menuShipBaseY + offsetY);
+  }
+
+  private initializeGamepadLogging() {
+    const gamepadPlugin = this.input.gamepad as unknown as Phaser.Input.Gamepad.GamepadPlugin | undefined;
+
+    if (gamepadPlugin) {
+      gamepadPlugin.on('connected', (pad: Phaser.Input.Gamepad.Gamepad) => {
+        console.log(`[Gamepad] connected: index=${pad.index} id=${pad.id}`);
+      });
+      gamepadPlugin.on('disconnected', (pad: Phaser.Input.Gamepad.Gamepad) => {
+        console.log(`[Gamepad] disconnected: index=${pad.index} id=${pad.id}`);
+      });
+    }
+
+    console.log('[Gamepad] Xbox controller logging enabled. Press any controller button if the browser has not exposed it yet.');
+  }
+
+  private updateGamepadLogging() {
+    const getGamepads = navigator.getGamepads?.bind(navigator);
+
+    if (!getGamepads) {
+      if (!this.hasLoggedNoGamepad) {
+        this.hasLoggedNoGamepad = true;
+        console.log('[Gamepad] navigator.getGamepads is not available in this browser.');
+      }
+
+      return;
+    }
+
+    const gamepads = Array.from(getGamepads()).filter((gamepad): gamepad is Gamepad => gamepad !== null);
+
+    if (gamepads.length === 0) {
+      if (!this.hasLoggedNoGamepad) {
+        this.hasLoggedNoGamepad = true;
+        console.log('[Gamepad] no controller detected yet. Press an Xbox controller button to activate it.');
+      }
+
+      return;
+    }
+
+    this.hasLoggedNoGamepad = false;
+
+    gamepads.forEach((gamepad) => {
+      gamepad.buttons.forEach((button, buttonIndex) => {
+        const key = `${gamepad.index}:${buttonIndex}`;
+        const wasPressed = this.lastGamepadButtonStates.get(key) === true;
+
+        if (button.pressed === wasPressed) {
+          return;
+        }
+
+        this.lastGamepadButtonStates.set(key, button.pressed);
+        console.log(
+          `[Gamepad] ${button.pressed ? 'down' : 'up'} pad=${gamepad.index} button=${XBOX_BUTTON_NAMES[buttonIndex] ?? buttonIndex} value=${button.value.toFixed(2)}`
+        );
+      });
+
+      const axisSnapshot = gamepad.axes
+        .map((axis) => Math.round(axis * 100) / 100)
+        .map((axis) => Math.abs(axis) < 0.12 ? 0 : axis)
+        .join(',');
+      const previousAxisSnapshot = this.lastGamepadAxisSnapshot.get(`${gamepad.index}`);
+
+      if (axisSnapshot !== previousAxisSnapshot) {
+        this.lastGamepadAxisSnapshot.set(`${gamepad.index}`, axisSnapshot);
+        console.log(`[Gamepad] axes pad=${gamepad.index} values=[${axisSnapshot}]`);
+      }
+    });
+  }
+
+  private getPrimaryGamepad() {
+    return Array.from(navigator.getGamepads?.() ?? []).find((gamepad): gamepad is Gamepad => gamepad !== null);
+  }
+
+  private getSecondPlayerGamepadDirection() {
+    const direction = new Phaser.Math.Vector2(0, 0);
+    const gamepad = this.getPrimaryGamepad();
+
+    if (!gamepad) {
+      return direction;
+    }
+
+    const axisX = Math.abs(gamepad.axes[0] ?? 0) > GAMEPAD_DEAD_ZONE ? gamepad.axes[0] : 0;
+    const axisY = Math.abs(gamepad.axes[1] ?? 0) > GAMEPAD_DEAD_ZONE ? gamepad.axes[1] : 0;
+
+    direction.x += axisX;
+    direction.y += axisY;
+
+    if (gamepad.buttons[14]?.pressed) {
+      direction.x -= 1;
+    }
+
+    if (gamepad.buttons[15]?.pressed) {
+      direction.x += 1;
+    }
+
+    if (gamepad.buttons[12]?.pressed) {
+      direction.y -= 1;
+    }
+
+    if (gamepad.buttons[13]?.pressed) {
+      direction.y += 1;
+    }
+
+    return direction.lengthSq() > 1 ? direction.normalize() : direction;
+  }
+
+  private isSecondPlayerGamepadActionPressed() {
+    return this.getPrimaryGamepad()?.buttons[0]?.pressed === true;
+  }
+
+  private isSecondPlayerInteractInputDown() {
+    return this.secondPlayerKeys?.L.isDown === true || this.isSecondPlayerGamepadActionPressed();
+  }
+
+  private isSecondPlayerVerticalInputDown() {
+    const gamepadDirection = this.getSecondPlayerGamepadDirection();
+
+    return this.secondPlayerKeys?.UP.isDown === true ||
+      this.secondPlayerKeys?.DOWN.isDown === true ||
+      Math.abs(gamepadDirection.y) > 0;
   }
 
   private igniteRandomRoom() {
@@ -2202,6 +2631,8 @@ class MainScene extends Phaser.Scene {
 
     this.isUiPanelVisible = !this.isUiPanelVisible;
     this.uiPanel.setVisible(this.isUiPanelVisible);
+    this.playerPanelControls?.container.setVisible(this.isUiPanelVisible);
+    this.secondPlayerPanelControls?.container.setVisible(this.isUiPanelVisible);
   }
 
   private createGameProgressUi(width: number) {
@@ -2539,17 +2970,15 @@ class MainScene extends Phaser.Scene {
 
     const playerX = this.player.x;
     const playerY = this.player.y;
-    const wasPlayerGravityEnabled = this.isGravityEnabled;
     const wasPlayerInsideShip = this.isPlayerInsideShip;
     const playerImpulseDirection = this.getPlayerMovementInputDirection();
     const secondPlayerImpulseDirection = this.getSecondPlayerMovementInputDirection();
 
     this.player.setPosition(this.secondPlayer.x, this.secondPlayer.y);
     this.secondPlayer.setPosition(playerX, playerY);
-    this.isGravityEnabled = this.isSecondPlayerGravityEnabled;
-    this.isSecondPlayerGravityEnabled = wasPlayerGravityEnabled;
     this.isPlayerInsideShip = this.isSecondPlayerInsideShip;
     this.isSecondPlayerInsideShip = wasPlayerInsideShip;
+    this.syncGravityWithShipArea();
     this.playerVelocityY = 0;
     this.secondPlayerVelocityY = 0;
     this.applySwapImpulse(this.playerSwapImpulse, playerImpulseDirection);
@@ -2589,44 +3018,35 @@ class MainScene extends Phaser.Scene {
   }
 
   private updateSecondPlayer(delta: number) {
-    if (!this.secondPlayer || !this.secondPlayerKeys) {
+    if (!this.secondPlayer) {
       return;
     }
 
-    if (Phaser.Input.Keyboard.JustDown(this.secondPlayerKeys.L)) {
+    const isGamepadActionPressed = this.isSecondPlayerGamepadActionPressed();
+
+    if (
+      (this.secondPlayerKeys && Phaser.Input.Keyboard.JustDown(this.secondPlayerKeys.L)) ||
+      (isGamepadActionPressed && !this.wasSecondPlayerGamepadActionPressed)
+    ) {
       this.handlePlayerAction('player2');
     }
 
+    this.wasSecondPlayerGamepadActionPressed = isGamepadActionPressed;
+
     this.updateSecondPlayerState();
 
-    const direction = new Phaser.Math.Vector2(0, 0);
+    const direction = this.getSecondPlayerMovementInputDirection();
     const healthSpeedMultiplier = this.getSecondPlayerHealthSpeedMultiplier();
-
-    if (this.secondPlayerKeys.LEFT.isDown) {
-      direction.x -= 1;
-    }
-
-    if (this.secondPlayerKeys.RIGHT.isDown) {
-      direction.x += 1;
-    }
 
     if (direction.x !== 0) {
       this.setSecondPlayerPrefabFacing(direction.x < 0 ? -1 : 1);
-    }
-
-    if (this.secondPlayerKeys.UP.isDown) {
-      direction.y -= 1;
-    }
-
-    if (this.secondPlayerKeys.DOWN.isDown) {
-      direction.y += 1;
     }
 
     if (direction.lengthSq() > 0) {
       direction.normalize().scale(PLAYER_SPEED * healthSpeedMultiplier * (delta / 1000));
     }
 
-    if (this.isSecondPlayerGravityEnabled) {
+    if (this.shouldApplySecondPlayerGravity()) {
       this.secondPlayerVelocityY = Math.min(
         this.secondPlayerVelocityY + PLAYER_GRAVITY * (delta / 1000),
         PLAYER_MAX_FALL_SPEED
@@ -2672,7 +3092,7 @@ class MainScene extends Phaser.Scene {
       !this.collidesWithMap(this.secondPlayer.x, nextY, this.isSecondPlayerInsideShip)
     ) {
       this.secondPlayer.y = nextY;
-    } else if (this.isSecondPlayerGravityEnabled && direction.y > 0) {
+    } else if (this.shouldApplySecondPlayerGravity() && direction.y > 0) {
       this.secondPlayerVelocityY = 0;
     }
 
@@ -2711,11 +3131,19 @@ class MainScene extends Phaser.Scene {
     return direction.lengthSq() > 0 ? direction.normalize() : direction;
   }
 
+  private shouldApplyPlayerGravity() {
+    return this.isGravityEnabled && this.playerState !== 'Climbing';
+  }
+
+  private shouldApplySecondPlayerGravity() {
+    return this.isSecondPlayerGravityEnabled && this.secondPlayerState !== 'Climbing';
+  }
+
   private getSecondPlayerMovementInputDirection() {
-    const direction = new Phaser.Math.Vector2(0, 0);
+    const direction = this.getSecondPlayerGamepadDirection();
 
     if (!this.secondPlayerKeys) {
-      return direction;
+      return direction.lengthSq() > 0 ? direction.normalize() : direction;
     }
 
     if (this.secondPlayerKeys.LEFT.isDown) {
@@ -2776,8 +3204,8 @@ class MainScene extends Phaser.Scene {
 
     const context = this.createPlayerStateTransitionContextFor(
       this.secondPlayer,
-      this.secondPlayerKeys?.UP.isDown === true || this.secondPlayerKeys?.DOWN.isDown === true,
-      this.secondPlayerKeys?.L.isDown === true
+      this.isSecondPlayerVerticalInputDown(),
+      this.isSecondPlayerInteractInputDown()
     );
     const nextState = this.playerStateTransitions[this.secondPlayerState](context);
 
@@ -2789,6 +3217,13 @@ class MainScene extends Phaser.Scene {
   }
 
   update(time: number, delta: number) {
+    this.updateGamepadLogging();
+
+    if (!this.isGameStarted) {
+      this.updateMenuShipParallax();
+      return;
+    }
+
     this.updateAsteroids(delta);
     this.updateAliens(delta);
     this.updateSnowNoiseOverlay(delta);
@@ -2856,7 +3291,7 @@ class MainScene extends Phaser.Scene {
       direction.normalize().scale(PLAYER_SPEED * healthSpeedMultiplier * (delta / 1000));
     }
 
-    if (this.isGravityEnabled) {
+    if (this.shouldApplyPlayerGravity()) {
       this.playerVelocityY = Math.min(
         this.playerVelocityY + PLAYER_GRAVITY * (delta / 1000),
         PLAYER_MAX_FALL_SPEED
@@ -2906,7 +3341,7 @@ class MainScene extends Phaser.Scene {
 
     if (!this.isWhiteCollisionEnabled || !this.collidesWithMap(this.player.x, nextY, this.isPlayerInsideShip)) {
       this.player.y = nextY;
-    } else if (this.isGravityEnabled && direction.y > 0) {
+    } else if (this.shouldApplyPlayerGravity() && direction.y > 0) {
       this.playerVelocityY = 0;
     }
 
@@ -3338,7 +3773,7 @@ class MainScene extends Phaser.Scene {
 
     const context = this.createPlayerStateTransitionContextFor(
       this.secondPlayer,
-      this.secondPlayerKeys?.UP.isDown === true || this.secondPlayerKeys?.DOWN.isDown === true,
+      this.isSecondPlayerVerticalInputDown(),
       true
     );
     const nextState = this.playerStateTransitions[this.secondPlayerState](context);
@@ -4391,7 +4826,7 @@ class MainScene extends Phaser.Scene {
   }
 
   private updateSecondPlayerRepairProgress(delta: number) {
-    if (this.secondPlayerState !== 'Driving-Repairing' || !this.secondPlayerKeys?.L.isDown) {
+    if (this.secondPlayerState !== 'Driving-Repairing' || !this.isSecondPlayerInteractInputDown()) {
       return;
     }
 
@@ -4423,7 +4858,7 @@ class MainScene extends Phaser.Scene {
   }
 
   private updateSecondPlayerRepoProgress(delta: number) {
-    if (this.secondPlayerState !== 'Repoing' || !this.secondPlayerKeys?.L.isDown) {
+    if (this.secondPlayerState !== 'Repoing' || !this.isSecondPlayerInteractInputDown()) {
       return;
     }
 
@@ -4479,7 +4914,7 @@ class MainScene extends Phaser.Scene {
   }
 
   private updateSecondPlayerFirefightingProgress(delta: number) {
-    if (this.secondPlayerState !== 'Firefighting' || !this.secondPlayerKeys?.L.isDown || !this.secondPlayerFirefightingRoom) {
+    if (this.secondPlayerState !== 'Firefighting' || !this.isSecondPlayerInteractInputDown() || !this.secondPlayerFirefightingRoom) {
       return;
     }
 
@@ -4539,7 +4974,7 @@ class MainScene extends Phaser.Scene {
   }
 
   private updateSecondPlayerWorkshopProgress(delta: number) {
-    if (this.secondPlayerState !== 'Working' || !this.secondPlayerKeys?.L.isDown || !this.hasWorkshopResources()) {
+    if (this.secondPlayerState !== 'Working' || !this.isSecondPlayerInteractInputDown() || !this.hasWorkshopResources()) {
       return;
     }
 
@@ -4647,6 +5082,7 @@ class MainScene extends Phaser.Scene {
     this.driveSelectedText.setX(option.label === 'Wrong' ? 112 : 104);
     this.driveStateButton?.setFillStyle(option.label === 'Wrong' ? 0xdc2626 : 0x22c55e, 1);
     this.updateDriveWarningSignVisibility();
+    this.updateAlarmSound();
 
     if (!option.textureKey) {
       this.driveOverlay.setVisible(false);
@@ -4668,6 +5104,7 @@ class MainScene extends Phaser.Scene {
       }
     );
     this.updateLivingWarningSignVisibility();
+    this.updateAlarmSound();
   }
 
   private setPlantRoomOption(label: string) {
@@ -4682,6 +5119,30 @@ class MainScene extends Phaser.Scene {
       }
     );
     this.updatePlantWarningSignVisibility();
+    this.updateAlarmSound();
+  }
+
+  private updateAlarmSound() {
+    if (!this.alarmSound) {
+      return;
+    }
+
+    const shouldPlayAlarm = this.isAnyShipRoomOnFire();
+
+    if (shouldPlayAlarm && !this.alarmSound.isPlaying) {
+      this.alarmSound.play();
+      return;
+    }
+
+    if (!shouldPlayAlarm && this.alarmSound.isPlaying) {
+      this.alarmSound.stop();
+    }
+  }
+
+  private isAnyShipRoomOnFire() {
+    return this.currentDriveRoomOption === 'Wrong' ||
+      this.currentLivingRoomOption === 'Wrong' ||
+      this.currentPlantRoomOption === 'Wrong';
   }
 
   private setFireRoomOption(
@@ -5468,8 +5929,9 @@ class MainScene extends Phaser.Scene {
       return;
     }
 
+    this.syncGravityWithShipArea();
+
     if (this.playerState === 'Climbing') {
-      this.isGravityEnabled = false;
       this.isWhiteCollisionEnabled = false;
       this.playerVelocityY = 0;
       this.updateGravityUi();
@@ -5480,7 +5942,6 @@ class MainScene extends Phaser.Scene {
     }
 
     if (this.playerState === 'Healing') {
-      this.isGravityEnabled = true;
       this.isWhiteCollisionEnabled = true;
       this.playerVelocityY = 0;
       this.updateGravityUi();
@@ -5491,7 +5952,6 @@ class MainScene extends Phaser.Scene {
     }
 
     if (this.playerState === 'Driving') {
-      this.isGravityEnabled = true;
       this.isWhiteCollisionEnabled = true;
       this.playerVelocityY = 0;
       this.updateGravityUi();
@@ -5502,7 +5962,6 @@ class MainScene extends Phaser.Scene {
     }
 
     if (this.playerState === 'Driving-Repairing') {
-      this.isGravityEnabled = true;
       this.isWhiteCollisionEnabled = true;
       this.playerVelocityY = 0;
       this.updateGravityUi();
@@ -5513,7 +5972,6 @@ class MainScene extends Phaser.Scene {
     }
 
     if (this.playerState === 'Repoing') {
-      this.isGravityEnabled = true;
       this.isWhiteCollisionEnabled = true;
       this.playerVelocityY = 0;
       this.updateGravityUi();
@@ -5524,7 +5982,6 @@ class MainScene extends Phaser.Scene {
     }
 
     if (this.playerState === 'Outer-Repairing') {
-      this.isGravityEnabled = true;
       this.isWhiteCollisionEnabled = true;
       this.playerVelocityY = 0;
       this.updateGravityUi();
@@ -5534,7 +5991,6 @@ class MainScene extends Phaser.Scene {
       return;
     }
 
-    this.isGravityEnabled = true;
     this.isWhiteCollisionEnabled = true;
     this.playerVelocityY = 0;
     this.updateGravityUi();
@@ -5544,8 +6000,9 @@ class MainScene extends Phaser.Scene {
   }
 
   private applySecondPlayerState() {
+    this.syncGravityWithShipArea();
+
     if (this.secondPlayerState === 'Climbing') {
-      this.isSecondPlayerGravityEnabled = false;
       this.isSecondPlayerWhiteCollisionEnabled = false;
       this.secondPlayerVelocityY = 0;
       this.updateSecondPlayerProgressBar();
@@ -5553,7 +6010,6 @@ class MainScene extends Phaser.Scene {
       return;
     }
 
-    this.isSecondPlayerGravityEnabled = true;
     this.isSecondPlayerWhiteCollisionEnabled = true;
     this.secondPlayerVelocityY = 0;
     this.updateSecondPlayerProgressBar();
@@ -5569,6 +6025,11 @@ class MainScene extends Phaser.Scene {
     this.gravityText.setText(this.isGravityEnabled ? 'On' : 'Off');
     this.gravityText.setX(this.isGravityEnabled ? 133 : 132);
     this.updatePlayerInfoUi();
+  }
+
+  private syncGravityWithShipArea() {
+    this.isGravityEnabled = this.isPlayerInsideShip;
+    this.isSecondPlayerGravityEnabled = this.isSecondPlayerInsideShip;
   }
 
   private liftPlayerOutOfLadder() {
@@ -5715,6 +6176,9 @@ const config: Phaser.Types.Core.GameConfig = {
   backgroundColor: '#111827',
   render: {
     preserveDrawingBuffer: true
+  },
+  input: {
+    gamepad: true
   },
   scale: {
     mode: Phaser.Scale.FIT,
