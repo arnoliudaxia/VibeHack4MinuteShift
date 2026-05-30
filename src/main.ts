@@ -75,10 +75,12 @@ const EXPLOSION_FRAME_KEYS = [
   'explosion8'
 ];
 
-const ASTEROID_ASSETS = [
+const ASTEROID_ASSETS: AsteroidAsset[] = [
   { key: 'asteroidGreyTiny', path: '/assets/scene/SpcaeElements/asteroid_grey_tiny.png' },
   { key: 'asteroidTiny', path: '/assets/scene/SpcaeElements/asteroid_tiny.png' },
-  { key: 'pixelAsteroid', path: '/assets/scene/SpcaeElements/pixel_asteroid.png' }
+  { key: 'pixelAsteroid', path: '/assets/scene/SpcaeElements/pixel_asteroid.png' },
+  { key: 'metalDebris', path: '/assets/scene/SpcaeElements/金属碎片.png', lockAlpha: true, collisionKind: 'metalDebris' },
+  { key: 'iceCrystal', path: '/assets/scene/SpcaeElements/冰晶.png', lockAlpha: true, collisionKind: 'iceCrystal' }
 ];
 
 // 操控
@@ -99,8 +101,19 @@ type VolumeSound = Phaser.Sound.BaseSound & {
 type AsteroidSprite = Phaser.GameObjects.Image & {
   velocityX: number;
   rotationSpeed: number;
+  collisionKind?: AsteroidCollisionKind;
   isPixelAsteroidLane?: boolean;
   hasTriggeredPixelAsteroidLaneAction?: boolean;
+  hasTriggeredPlayerCollision?: boolean;
+};
+
+type AsteroidCollisionKind = 'metalDebris' | 'iceCrystal';
+
+type AsteroidAsset = {
+  key: string;
+  path: string;
+  lockAlpha?: boolean;
+  collisionKind?: AsteroidCollisionKind;
 };
 
 type PlayerState = 'Normal' | 'Climbing' | 'Healing' | 'Driving' | 'Driving-Repairing';
@@ -697,6 +710,7 @@ class MainScene extends Phaser.Scene {
   private playerPrefabAnimationTime = 0;
   private keys?: PlayerKeys;
   private driveOverlay?: Phaser.GameObjects.Image;
+  private outerWrongOverlay?: Phaser.GameObjects.Image;
   private driveWarningSign?: Phaser.GameObjects.Image;
   private rockWarningSign?: Phaser.GameObjects.Image;
   private driveWarningBlinkTime = 0;
@@ -708,6 +722,8 @@ class MainScene extends Phaser.Scene {
   private playerVelocityY = 0;
   private playerState: PlayerState = 'Normal';
   private isWhiteCollisionEnabled = true;
+  private isCollisionDebugVisible = false;
+  private collisionBodyDebug?: Phaser.GameObjects.Graphics;
   private collisionData?: Uint8Array;
   private ladderData?: Uint8Array;
   private roomMasks = new Map<string, RoomMaskData>();
@@ -739,6 +755,7 @@ class MainScene extends Phaser.Scene {
     this.load.image('spaceShipFire', '/assets/scene/spaceShipFire.png');
     this.load.image('background', '/assets/scene/spaceShip.png');
     this.load.image('collision', '/assets/scene/physic.png');
+    this.load.image('outerWrong', '/assets/scene/ShipRoom/OuterWrong.png');
     this.load.image('warningSign', '/assets/VFX/warningSign.png');
     this.load.image('warningSignRock', '/assets/VFX/warningSignRock.png');
     EXPLOSION_FRAME_KEYS.forEach((key, index) => {
@@ -819,6 +836,10 @@ class MainScene extends Phaser.Scene {
       .setDisplaySize(SCENE_WIDTH * scale, SCENE_HEIGHT * scale)
       .setVisible(true);
     this.driveOverlay = driveOverlay;
+    this.outerWrongOverlay = this.add
+      .image(width / 2, height / 2, 'outerWrong')
+      .setDisplaySize(SCENE_WIDTH * scale, SCENE_HEIGHT * scale)
+      .setVisible(false);
     this.driveWarningSign = this.add
       .image(DRIVE_WARNING_SIGN_X, DRIVE_WARNING_SIGN_Y, 'warningSign')
       .setDisplaySize(DRIVE_WARNING_SIGN_SIZE, DRIVE_WARNING_SIGN_SIZE)
@@ -855,6 +876,7 @@ class MainScene extends Phaser.Scene {
     this.playerProgressBar = this.add.graphics();
     this.playerProgressBar.setVisible(false);
     this.updatePlayerProgressBar();
+    this.collisionBodyDebug = this.add.graphics().setVisible(false).setDepth(1000);
     this.exposePlayerAnimationInterface();
 
     this.keys = this.input.keyboard?.addKeys('W,A,S,D,E') as PlayerKeys | undefined;
@@ -1141,7 +1163,10 @@ class MainScene extends Phaser.Scene {
 
       const isVisible = !collisionOverlay.visible;
 
+      this.isCollisionDebugVisible = isVisible;
       collisionOverlay.setVisible(isVisible);
+      this.collisionBodyDebug?.setVisible(isVisible);
+      this.updateCollisionBodyDebug();
       collisionButton.setFillStyle(isVisible ? 0xdc2626 : 0x475569, 1);
       collisionText.setText(isVisible ? 'Visible' : 'Hidden');
       collisionText.setX(isVisible ? 130 : 127);
@@ -1164,6 +1189,7 @@ class MainScene extends Phaser.Scene {
     this.updateDriveWarningSign(delta);
 
     if (!this.player || !this.keys) {
+      this.updateCollisionBodyDebug();
       return;
     }
 
@@ -1214,6 +1240,7 @@ class MainScene extends Phaser.Scene {
       this.updatePlayerHealthBar();
       this.updatePlayerProgressBar();
       this.updatePlayerCoordinateUi();
+      this.updateCollisionBodyDebug();
       return;
     }
 
@@ -1252,6 +1279,7 @@ class MainScene extends Phaser.Scene {
     this.updatePlayerHealthBar();
     this.updatePlayerProgressBar();
     this.updatePlayerCoordinateUi();
+    this.updateCollisionBodyDebug();
   }
 
   private createPlayerPrefabVisual(x: number, y: number) {
@@ -1422,6 +1450,16 @@ class MainScene extends Phaser.Scene {
         continue;
       }
 
+      if (asteroid.collisionKind && !asteroid.hasTriggeredPlayerCollision && this.overlapsPlayer(asteroid)) {
+        asteroid.hasTriggeredPlayerCollision = true;
+
+        if (asteroid.collisionKind === 'metalDebris') {
+          this.onMetalDebrisHitPlayer();
+        } else {
+          this.onIceCrystalHitPlayer();
+        }
+      }
+
       if (asteroid.x + asteroid.displayWidth / 2 >= -40) {
         continue;
       }
@@ -1433,7 +1471,13 @@ class MainScene extends Phaser.Scene {
 
   private spawnAsteroid() {
     const asteroidAsset = Phaser.Utils.Array.GetRandom(ASTEROID_ASSETS);
-    this.createAsteroid(asteroidAsset.key, Phaser.Math.Between(840, 1000));
+    this.createAsteroid(
+      asteroidAsset.key,
+      Phaser.Math.Between(840, 1000),
+      false,
+      asteroidAsset.lockAlpha === true,
+      asteroidAsset.collisionKind
+    );
   }
 
   private spawnPixelAsteroidLaneAsteroid() {
@@ -1444,7 +1488,13 @@ class MainScene extends Phaser.Scene {
     );
   }
 
-  private createAsteroid(textureKey: string, y: number, isPixelAsteroidLane = false) {
+  private createAsteroid(
+    textureKey: string,
+    y: number,
+    isPixelAsteroidLane = false,
+    lockAlpha = false,
+    collisionKind?: AsteroidCollisionKind
+  ) {
     const asteroid = this.add.image(
       this.scale.width + 80,
       y,
@@ -1453,19 +1503,85 @@ class MainScene extends Phaser.Scene {
 
     asteroid
       .setScale(Phaser.Math.FloatBetween(ASTEROID_MIN_SCALE, ASTEROID_MAX_SCALE))
-      .setAlpha(Phaser.Math.FloatBetween(0.65, 1));
+      .setAlpha(lockAlpha ? 1 : Phaser.Math.FloatBetween(0.65, 1));
     asteroid.velocityX = -Phaser.Math.Between(ASTEROID_MIN_SPEED, ASTEROID_MAX_SPEED);
     asteroid.rotationSpeed = Phaser.Math.FloatBetween(-1.2, 1.2);
+    asteroid.collisionKind = collisionKind;
     asteroid.isPixelAsteroidLane = isPixelAsteroidLane;
     asteroid.hasTriggeredPixelAsteroidLaneAction = false;
+    asteroid.hasTriggeredPlayerCollision = false;
 
     this.asteroids.push(asteroid);
 
     return asteroid;
   }
 
+  private overlapsPlayer(asteroid: AsteroidSprite) {
+    if (!this.player) {
+      return false;
+    }
+
+    const playerLeft = this.player.x - PLAYER_WIDTH / 2;
+    const playerRight = this.player.x + PLAYER_WIDTH / 2;
+    const playerTop = this.player.y - PLAYER_HEIGHT / 2;
+    const playerBottom = this.player.y + PLAYER_HEIGHT / 2;
+    const asteroidLeft = asteroid.x - asteroid.displayWidth / 2;
+    const asteroidRight = asteroid.x + asteroid.displayWidth / 2;
+    const asteroidTop = asteroid.y - asteroid.displayHeight / 2;
+    const asteroidBottom = asteroid.y + asteroid.displayHeight / 2;
+
+    return asteroidRight >= playerLeft && asteroidLeft <= playerRight && asteroidBottom >= playerTop && asteroidTop <= playerBottom;
+  }
+
+  private updateCollisionBodyDebug() {
+    if (!this.collisionBodyDebug) {
+      return;
+    }
+
+    this.collisionBodyDebug.clear();
+
+    if (!this.isCollisionDebugVisible || !this.player) {
+      this.collisionBodyDebug.setVisible(false);
+      return;
+    }
+
+    this.collisionBodyDebug
+      .setVisible(true)
+      .lineStyle(2, 0x38bdf8, 1)
+      .strokeRect(
+        this.player.x - PLAYER_WIDTH / 2,
+        this.player.y - PLAYER_HEIGHT / 2,
+        PLAYER_WIDTH,
+        PLAYER_HEIGHT
+      );
+
+    this.asteroids.forEach((asteroid) => {
+      if (!asteroid.collisionKind) {
+        return;
+      }
+
+      const color = asteroid.collisionKind === 'metalDebris' ? 0xfacc15 : 0x67e8f9;
+
+      this.collisionBodyDebug!
+        .lineStyle(2, color, 1)
+        .strokeRect(
+          asteroid.x - asteroid.displayWidth / 2,
+          asteroid.y - asteroid.displayHeight / 2,
+          asteroid.displayWidth,
+          asteroid.displayHeight
+        );
+    });
+  }
+
+  private onMetalDebrisHitPlayer() {
+  }
+
+  private onIceCrystalHitPlayer() {
+  }
+
   private onPixelAsteroidLaneReachedTriggerX(x: number, y: number) {
     console.log('上面陨石撞到了飞船');
+    this.outerWrongOverlay?.setVisible(true);
     this.playExplosionTest(x, y);
   }
 
