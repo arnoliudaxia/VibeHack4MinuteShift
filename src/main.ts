@@ -21,6 +21,8 @@ const PLAYER_PROGRESS_RADIUS = 14;
 const PLAYER_PROGRESS_LINE_WIDTH = 4;
 const PLAYER_REPAIR_PROGRESS_PER_SECOND = 0.2;
 const PLAYER_REPO_PROGRESS_PER_SECOND = 0.5;
+const PLAYER_WORKSHOP_PROGRESS_PER_SECOND = 0.2;
+const PLAYER_FIRE_EXTINGUISH_PROGRESS_PER_SECOND = 0.2;
 const PLAYER_SWAP_IMPULSE_SPEED = 500;
 const PLAYER_SWAP_IMPULSE_DURATION = 1000;
 const PLAYER_OUTER_REPAIR_PROGRESS_PER_SECOND = 0.1;
@@ -54,9 +56,14 @@ const BGM_VOLUME = 0.45;
 const PANEL_CONTROL_X = 92;
 const PANEL_CONTROL_WIDTH = 112;
 const PANEL_SLIDER_WIDTH = 78;
+const GAME_PROGRESS_MAX = 1000;
+const GAME_PROGRESS_DECAY_PER_SECOND = 8;
+const GAME_PROGRESS_BAR_HEIGHT = 18;
+const GAME_PROGRESS_BAR_Y = 0;
 const SECOND_CLOCK_OFFSET_X = 174;
 const SECOND_CLOCK_OFFSET_Y = 40;
 const SECOND_CLOCK_RADIUS = 24;
+const SWAP_CLOCK_INTERVAL_SECONDS = [60, 45, 30];
 const PLAYER_HEALTH_BAR_WIDTH = 44;
 const PLAYER_HEALTH_BAR_HEIGHT = 7;
 
@@ -105,7 +112,7 @@ const POWER_CRYSTAL_HEIGHT = 80;
 const POWER_CRYSTAL_X = 814 + POWER_CRYSTAL_WIDTH / 2;
 const POWER_CRYSTAL_Y = 645 + POWER_CRYSTAL_HEIGHT / 2;
 const SHIP_MAX_ENERGY = 100;
-const SHIP_ENERGY_DECAY_PER_SECOND = 3;
+const SHIP_ENERGY_DECAY_PER_SECOND = 1.5;
 const RESOURCE_COUNTER_MAX = 3;
 const RESOURCE_COUNTER_BOX_WIDTH = 72;
 const RESOURCE_COUNTER_BOX_HEIGHT = 92;
@@ -221,18 +228,21 @@ type AsteroidAsset = {
   collisionKind?: AsteroidCollisionKind;
 };
 
-type PlayerState = 'Normal' | 'Climbing' | 'Healing' | 'Driving' | 'Driving-Repairing' | 'Repoing' | 'Outer-Repairing';
+type PlayerState = 'Normal' | 'Climbing' | 'Healing' | 'Driving' | 'Driving-Repairing' | 'Repoing' | 'Outer-Repairing' | 'Working' | 'Firefighting';
 
 type PlayerStateTransitionContext = {
   isTouchingLadder: boolean;
   isInsideHealRoom: boolean;
   isInsideDriveRoom: boolean;
+  isInsideWorkshopRoom: boolean;
   isInsideRepoFullRoom: boolean;
   isInsideOuterWrongRoom: boolean;
+  isInsideBurningRoom: boolean;
   isVerticalInputPressed: boolean;
   isDriveRoomWrong: boolean;
   isOuterWrong: boolean;
   isRepairInputPressed: boolean;
+  hasWorkshopResources: boolean;
 };
 
 type PlayerStateTransition = (context: PlayerStateTransitionContext) => PlayerState;
@@ -948,6 +958,10 @@ class MainScene extends Phaser.Scene {
   private secondPlayerAnimationState: PlayerPrefabAnimationName = 'Idle';
   private secondPlayerPrefabAnimationTime = 0;
   private secondPlayerProgress = 0;
+  private playerWorkshopProgress = 0;
+  private secondPlayerWorkshopProgress = 0;
+  private playerFirefightingRoom?: FireRoomId;
+  private secondPlayerFirefightingRoom?: FireRoomId;
   private playerExtinguisherPickupProgress = 0;
   private secondPlayerExtinguisherPickupProgress = 0;
   private playerClothingPickupProgress = 0;
@@ -978,6 +992,10 @@ class MainScene extends Phaser.Scene {
   private swapWarningSign?: Phaser.GameObjects.Image;
   private swapWarningText?: Phaser.GameObjects.Text;
   private swapWarningRemaining = 0;
+  private energyWarningSign?: Phaser.GameObjects.Image;
+  private gameProgress = GAME_PROGRESS_MAX;
+  private gameProgressTrack?: Phaser.GameObjects.Rectangle;
+  private gameProgressFill?: Phaser.GameObjects.Rectangle;
   private snowNoiseOverlay?: Phaser.GameObjects.TileSprite;
   private snowNoiseBaseLayer?: Phaser.GameObjects.TileSprite;
   private snowNoiseFlickerTimer = 0;
@@ -1037,6 +1055,10 @@ class MainScene extends Phaser.Scene {
         return 'Repoing';
       }
 
+      if (context.isInsideWorkshopRoom) {
+        return 'Working';
+      }
+
       return 'Normal';
     },
     Climbing: (context) => {
@@ -1074,7 +1096,9 @@ class MainScene extends Phaser.Scene {
       return 'Normal';
     },
     Repoing: (context) => context.isInsideRepoFullRoom ? 'Repoing' : 'Normal',
-    'Outer-Repairing': (context) => context.isOuterWrong && context.isInsideOuterWrongRoom ? 'Outer-Repairing' : 'Normal'
+    'Outer-Repairing': (context) => context.isOuterWrong && context.isInsideOuterWrongRoom ? 'Outer-Repairing' : 'Normal',
+    Working: (context) => context.isInsideWorkshopRoom ? 'Working' : 'Normal',
+    Firefighting: (context) => context.isInsideBurningRoom ? 'Firefighting' : 'Normal'
   };
   private isWhiteCollisionEnabled = true;
   private isCollisionDebugVisible = false;
@@ -1095,8 +1119,9 @@ class MainScene extends Phaser.Scene {
   private secondPlayerInfoText?: Phaser.GameObjects.Text;
   private playerPanelControls?: PlayerPanelControls;
   private secondPlayerPanelControls?: PlayerPanelControls;
-  private timerText?: Phaser.GameObjects.Text;
   private secondClock?: Phaser.GameObjects.Graphics;
+  private swapClockSeconds = 0;
+  private swapClockCompletedLaps = 0;
   private asteroids: AsteroidSprite[] = [];
   private alienSprites: AlienSprite[] = [];
   private alienSpawnTimer = 0;
@@ -1304,6 +1329,8 @@ class MainScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setVisible(false);
 
+    this.createGameProgressUi(width);
+
     this.createCollisionMask();
     this.createRoomMasks();
     this.anims.create({
@@ -1321,6 +1348,10 @@ class MainScene extends Phaser.Scene {
     this.powerCrystalSprite = this.add
       .sprite(POWER_CRYSTAL_X, POWER_CRYSTAL_Y, POWER_CRYSTAL_FRAME_KEYS[0])
       .setDisplaySize(POWER_CRYSTAL_WIDTH, POWER_CRYSTAL_HEIGHT);
+    this.energyWarningSign = this.add
+      .image(POWER_CRYSTAL_X, POWER_CRYSTAL_Y - POWER_CRYSTAL_HEIGHT / 2 - 36, 'warningSign')
+      .setDisplaySize(DRIVE_WARNING_SIGN_SIZE, DRIVE_WARNING_SIGN_SIZE)
+      .setVisible(false);
     this.powerCrystalSprite.on(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
       this.powerCrystalSprite?.setTexture(POWER_CRYSTAL_FRAME_KEYS[0]);
     });
@@ -1371,22 +1402,8 @@ class MainScene extends Phaser.Scene {
       L: Phaser.Input.Keyboard.KeyCodes.L
     }) as SecondPlayerKeys | undefined;
 
-    this.add
-      .rectangle(width - 16, 16, 126, 48, 0x000000, 1)
-      .setOrigin(1, 0)
-      .setScrollFactor(0);
     this.secondClock = this.add.graphics().setScrollFactor(0);
     this.drawSecondClock(0);
-    this.timerText = this.add
-      .text(width - 16, 16, '00:00', {
-        fontFamily: 'Arial, Helvetica, sans-serif',
-        fontSize: '32px',
-        color: '#ffffff',
-        stroke: '#020617',
-        strokeThickness: 5
-      })
-      .setOrigin(1, 0)
-      .setScrollFactor(0);
 
     const controlsPanel = this.add.container(width - 16, height - 16).setScrollFactor(0);
     const controlsBackground = this.add
@@ -1755,21 +1772,6 @@ class MainScene extends Phaser.Scene {
       fontSize: '15px',
       color: '#ffffff'
     });
-    const swapWarningLabel = this.add.text(14, 94, 'Swap Warn', {
-      fontFamily: 'Arial, Helvetica, sans-serif',
-      fontSize: '15px',
-      color: '#ffffff'
-    });
-    const swapWarningButton = this.add
-      .rectangle(PANEL_CONTROL_X, 89, PANEL_CONTROL_WIDTH, 32, 0xf59e0b, 1)
-      .setOrigin(0)
-      .setInteractive({ useHandCursor: true });
-    const swapWarningButtonText = this.add.text(132, 96, 'Simulate', {
-      fontFamily: 'Arial, Helvetica, sans-serif',
-      fontSize: '15px',
-      color: '#ffffff'
-    });
-
     const shipEnergyLabel = this.add.text(14, 98, 'Ship Energy', {
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '18px',
@@ -1994,9 +1996,6 @@ class MainScene extends Phaser.Scene {
       this.teleportText,
       shipEnergyLabel,
       this.shipEnergyText,
-      swapWarningLabel,
-      swapWarningButton,
-      swapWarningButtonText,
       resourcesLabel,
       this.resourcesText,
       playerTwoPanelLabel,
@@ -2056,10 +2055,6 @@ class MainScene extends Phaser.Scene {
 
     this.teleportButton.on('pointerdown', () => {
       this.swapPlayerPositions();
-    });
-
-    swapWarningButton.on('pointerdown', () => {
-      this.startSwapWarningCountdown();
     });
 
     animationButton.on('pointerdown', () => {
@@ -2209,10 +2204,51 @@ class MainScene extends Phaser.Scene {
     this.uiPanel.setVisible(this.isUiPanelVisible);
   }
 
+  private createGameProgressUi(width: number) {
+    this.gameProgressTrack = this.add
+      .rectangle(0, GAME_PROGRESS_BAR_Y, width, GAME_PROGRESS_BAR_HEIGHT, 0x0f172a, 0.86)
+      .setOrigin(0)
+      .setScrollFactor(0)
+      .setDepth(10010);
+    this.gameProgressFill = this.add
+      .rectangle(0, GAME_PROGRESS_BAR_Y, width, GAME_PROGRESS_BAR_HEIGHT, 0x22c55e, 1)
+      .setOrigin(0)
+      .setScrollFactor(0)
+      .setDepth(10011);
+  }
+
+  private updateGameProgress(delta: number) {
+    if (this.shipEnergy <= 0) {
+      this.updateEnergyWarningVisibility();
+      return;
+    }
+
+    this.gameProgress = Math.max(this.gameProgress - GAME_PROGRESS_DECAY_PER_SECOND * (delta / 1000), 0);
+    this.updateGameProgressUi();
+    this.updateEnergyWarningVisibility();
+  }
+
+  private updateGameProgressUi() {
+    const ratio = Phaser.Math.Clamp(this.gameProgress / GAME_PROGRESS_MAX, 0, 1);
+
+    this.gameProgressFill?.setDisplaySize(this.scale.width * ratio, GAME_PROGRESS_BAR_HEIGHT);
+  }
+
+  private updateEnergyWarningVisibility() {
+    const isVisible = this.shipEnergy <= 0;
+
+    if (this.energyWarningSign?.visible !== isVisible) {
+      this.driveWarningBlinkTime = 0;
+    }
+
+    this.energyWarningSign?.setVisible(isVisible).setAlpha(isVisible ? 1 : 0);
+  }
+
   private updateShipEnergy(delta: number) {
     this.shipEnergy = Math.max(this.shipEnergy - SHIP_ENERGY_DECAY_PER_SECOND * (delta / 1000), 0);
     this.shipEnergyText?.setText(`${Math.round(this.shipEnergy)}`);
     this.updateShipEnergyCrystalFrame();
+    this.updateEnergyWarningVisibility();
   }
 
   private updateShipEnergyCrystalFrame() {
@@ -2758,6 +2794,7 @@ class MainScene extends Phaser.Scene {
     this.updateSnowNoiseOverlay(delta);
     this.updateDriveWarningSign(delta);
     this.updateShipEnergy(delta);
+    this.updateGameProgress(delta);
     this.updateSwapWarningCountdown(delta);
 
     if (this.keys && Phaser.Input.Keyboard.JustDown(this.keys.H)) {
@@ -2773,18 +2810,22 @@ class MainScene extends Phaser.Scene {
       return;
     }
 
-    this.updateGameTimer(time);
+    this.updateSwapClock(delta);
     this.updatePlayerPrefabAnimation(delta);
     this.updateSecondPlayerPrefabAnimation(delta);
     this.updatePlayerState(this.keys.W.isDown || this.keys.S.isDown);
     this.updateRepairProgress(delta);
     this.updateRepoProgress(delta);
     this.updateOuterRepairProgress(delta);
+    this.updateFirefightingProgress(delta);
     this.updateHealing(delta);
     this.updateSecondPlayer(delta);
     this.updateSecondPlayerRepairProgress(delta);
     this.updateSecondPlayerRepoProgress(delta);
     this.updateSecondPlayerOuterRepairProgress(delta);
+    this.updateSecondPlayerFirefightingProgress(delta);
+    this.updateWorkshopProgress(delta);
+    this.updateSecondPlayerWorkshopProgress(delta);
     this.updateSecondHealing(delta);
     this.updateOuterWrongEntryDetection();
 
@@ -3233,15 +3274,24 @@ class MainScene extends Phaser.Scene {
   }
 
   private handlePlayerAction(playerId: PlayerId) {
-    if (this.isPlayerHoldingTool(playerId, 'Extinguisher')) {
-      if (!this.tryExtinguishFire(playerId)) {
-        this.dropPlayerExtinguisher(playerId);
-      }
+    if (this.isAnyActiveSceneInteractionInProgress() && !this.isPlayerActiveSceneInteraction(playerId)) {
+      return;
+    }
 
+    if (this.isPlayerActiveSceneInteraction(playerId)) {
+      return;
+    }
+
+    if (this.isPlayerHoldingTool(playerId, 'Extinguisher') && this.tryStartFirefighting(playerId)) {
       return;
     }
 
     if (this.tryStartPlayerInteraction(playerId)) {
+      return;
+    }
+
+    if (this.isPlayerHoldingTool(playerId, 'Extinguisher')) {
+      this.dropPlayerExtinguisher(playerId);
       return;
     }
 
@@ -3305,7 +3355,17 @@ class MainScene extends Phaser.Scene {
     return state !== 'Normal' && state !== 'Climbing';
   }
 
-  private tryExtinguishFire(playerId: PlayerId) {
+  private isPlayerActiveSceneInteraction(playerId: PlayerId) {
+    const state = playerId === 'player1' ? this.playerState : this.secondPlayerState;
+
+    return this.isRepairingState(state);
+  }
+
+  private isAnyActiveSceneInteractionInProgress() {
+    return this.isPlayerActiveSceneInteraction('player1') || this.isPlayerActiveSceneInteraction('player2');
+  }
+
+  private tryStartFirefighting(playerId: PlayerId) {
     const player = this.getPlayerById(playerId);
 
     if (!player) {
@@ -3318,7 +3378,16 @@ class MainScene extends Phaser.Scene {
       return false;
     }
 
-    this.setFireRoomNormal(fireRoom);
+    if (playerId === 'player1') {
+      this.playerFirefightingRoom = fireRoom;
+      this.setPlayerProgress(0);
+      this.transitionPlayerState('Firefighting');
+    } else {
+      this.secondPlayerFirefightingRoom = fireRoom;
+      this.setSecondPlayerProgress(0);
+      this.transitionSecondPlayerState('Firefighting');
+    }
+
     return true;
   }
 
@@ -4118,7 +4187,12 @@ class MainScene extends Phaser.Scene {
       return;
     }
 
-    this.drawProgressCircle(this.secondPlayerProgressBar, this.secondPlayer, this.secondPlayerProgress, 0xa78bfa);
+    this.drawProgressCircle(
+      this.secondPlayerProgressBar,
+      this.secondPlayer,
+      this.getSecondPlayerSceneProgress(),
+      0xa78bfa
+    );
   }
 
   private drawProgressCircle(
@@ -4274,9 +4348,22 @@ class MainScene extends Phaser.Scene {
       return;
     }
 
-    this.drawProgressCircle(this.playerProgressBar, this.player, this.playerProgress, 0x22c55e);
+    this.drawProgressCircle(
+      this.playerProgressBar,
+      this.player,
+      this.getPlayerSceneProgress(),
+      0x22c55e
+    );
 
     this.updateProgressSlider(this.playerProgress);
+  }
+
+  private getPlayerSceneProgress() {
+    return this.playerState === 'Working' ? this.playerWorkshopProgress : this.playerProgress;
+  }
+
+  private getSecondPlayerSceneProgress() {
+    return this.secondPlayerState === 'Working' ? this.secondPlayerWorkshopProgress : this.secondPlayerProgress;
   }
 
   private setPlayerProgress(progress: number) {
@@ -4375,6 +4462,129 @@ class MainScene extends Phaser.Scene {
     }
 
     this.repairOuterFromSecondPlayer();
+  }
+
+  private updateFirefightingProgress(delta: number) {
+    if (this.playerState !== 'Firefighting' || !this.keys?.E.isDown || !this.playerFirefightingRoom) {
+      return;
+    }
+
+    this.setPlayerProgress(this.playerProgress + PLAYER_FIRE_EXTINGUISH_PROGRESS_PER_SECOND * (delta / 1000));
+
+    if (this.playerProgress < 1) {
+      return;
+    }
+
+    this.completeFirefighting('player1');
+  }
+
+  private updateSecondPlayerFirefightingProgress(delta: number) {
+    if (this.secondPlayerState !== 'Firefighting' || !this.secondPlayerKeys?.L.isDown || !this.secondPlayerFirefightingRoom) {
+      return;
+    }
+
+    this.setSecondPlayerProgress(
+      this.secondPlayerProgress + PLAYER_FIRE_EXTINGUISH_PROGRESS_PER_SECOND * (delta / 1000)
+    );
+
+    if (this.secondPlayerProgress < 1) {
+      return;
+    }
+
+    this.completeFirefighting('player2');
+  }
+
+  private completeFirefighting(playerId: PlayerId) {
+    const roomId = playerId === 'player1' ? this.playerFirefightingRoom : this.secondPlayerFirefightingRoom;
+
+    if (!roomId) {
+      return;
+    }
+
+    this.setFireRoomNormal(roomId);
+
+    if (playerId === 'player1') {
+      this.playerFirefightingRoom = undefined;
+      this.setPlayerProgress(0);
+      this.playerState = 'Normal';
+      this.applyPlayerState();
+      this.updatePlayerProgressBar();
+      return;
+    }
+
+    this.secondPlayerFirefightingRoom = undefined;
+    this.setSecondPlayerProgress(0);
+    this.secondPlayerState = 'Normal';
+    this.applySecondPlayerState();
+    this.updateSecondPlayerProgressBar();
+  }
+
+  private updateWorkshopProgress(delta: number) {
+    if (this.playerState !== 'Working' || !this.keys?.E.isDown || !this.hasWorkshopResources()) {
+      return;
+    }
+
+    this.playerWorkshopProgress = Phaser.Math.Clamp(
+      this.playerWorkshopProgress + PLAYER_WORKSHOP_PROGRESS_PER_SECOND * (delta / 1000),
+      0,
+      1
+    );
+    this.updatePlayerProgressBar();
+
+    if (this.playerWorkshopProgress < 1) {
+      return;
+    }
+
+    this.completeWorkshopCraft('player1');
+  }
+
+  private updateSecondPlayerWorkshopProgress(delta: number) {
+    if (this.secondPlayerState !== 'Working' || !this.secondPlayerKeys?.L.isDown || !this.hasWorkshopResources()) {
+      return;
+    }
+
+    this.secondPlayerWorkshopProgress = Phaser.Math.Clamp(
+      this.secondPlayerWorkshopProgress + PLAYER_WORKSHOP_PROGRESS_PER_SECOND * (delta / 1000),
+      0,
+      1
+    );
+    this.updateSecondPlayerProgressBar();
+
+    if (this.secondPlayerWorkshopProgress < 1) {
+      return;
+    }
+
+    this.completeWorkshopCraft('player2');
+  }
+
+  private completeWorkshopCraft(playerId: PlayerId) {
+    this.shipEnergy = Math.min(this.shipEnergy + 50, SHIP_MAX_ENERGY);
+    this.shipEnergyText?.setText(`${Math.round(this.shipEnergy)}`);
+    this.updateShipEnergyCrystalFrame();
+    this.resetResourceCounts();
+
+    if (playerId === 'player1') {
+      this.playerWorkshopProgress = 0;
+      this.playerState = 'Normal';
+      this.applyPlayerState();
+      this.updatePlayerProgressBar();
+      return;
+    }
+
+    this.secondPlayerWorkshopProgress = 0;
+    this.secondPlayerState = 'Normal';
+    this.applySecondPlayerState();
+    this.updateSecondPlayerProgressBar();
+  }
+
+  private resetResourceCounts() {
+    this.metalDebrisCount = 0;
+    this.iceCrystalCount = 0;
+    this.resourceCounts.metalDebris = 0;
+    this.resourceCounts.iceCrystal = 0;
+    this.updateResourceCounterUi('metalDebris');
+    this.updateResourceCounterUi('iceCrystal');
+    this.updateResourcesUi();
   }
 
   private repairOuterFromSecondPlayer() {
@@ -4548,6 +4758,7 @@ class MainScene extends Phaser.Scene {
       !this.livingWarningSign?.visible &&
       !this.plantWarningSign?.visible &&
       !this.rockWarningSign?.visible &&
+      !this.energyWarningSign?.visible &&
       !this.swapWarningSign?.visible
     ) {
       return;
@@ -4572,6 +4783,10 @@ class MainScene extends Phaser.Scene {
 
     if (this.rockWarningSign?.visible) {
       this.rockWarningSign.setAlpha(alpha);
+    }
+
+    if (this.energyWarningSign?.visible) {
+      this.energyWarningSign.setAlpha(alpha);
     }
 
     if (this.swapWarningSign?.visible) {
@@ -4628,7 +4843,11 @@ class MainScene extends Phaser.Scene {
   }
 
   private isRepairingState(state: PlayerState) {
-    return state.endsWith('-Repairing') || state === 'Repoing';
+    return state.endsWith('-Repairing') || state === 'Repoing' || state === 'Working' || state === 'Firefighting';
+  }
+
+  private hasWorkshopResources() {
+    return this.metalDebrisCount >= RESOURCE_COUNTER_MAX && this.iceCrystalCount >= RESOURCE_COUNTER_MAX;
   }
 
   private isDriveRoomWrong() {
@@ -4714,24 +4933,23 @@ class MainScene extends Phaser.Scene {
     animationWindow.getPlayerAnimationState = () => this.getPlayerPrefabAnimationState();
   }
 
-  private updateGameTimer(time: number) {
-    if (!this.timerText) {
-      return;
+  private updateSwapClock(delta: number) {
+    this.swapClockSeconds += delta / 1000;
+
+    let currentInterval = this.getCurrentSwapClockInterval();
+
+    while (this.swapClockSeconds >= currentInterval) {
+      this.swapClockSeconds -= currentInterval;
+      this.swapClockCompletedLaps += 1;
+      this.swapPlayerPositions();
+      currentInterval = this.getCurrentSwapClockInterval();
     }
 
-    const elapsedSeconds = Math.floor((time - this.gameStartTime) / 1000);
+    this.drawSecondClock((this.swapClockSeconds / currentInterval) * 60);
+  }
 
-    if (elapsedSeconds === this.displayedGameSeconds) {
-      return;
-    }
-
-    this.displayedGameSeconds = elapsedSeconds;
-
-    const minutes = Math.floor(elapsedSeconds / 60).toString().padStart(2, '0');
-    const seconds = (elapsedSeconds % 60).toString().padStart(2, '0');
-
-    this.timerText.setText(`${minutes}:${seconds}`);
-    this.drawSecondClock(elapsedSeconds);
+  private getCurrentSwapClockInterval() {
+    return SWAP_CLOCK_INTERVAL_SECONDS[Math.min(this.swapClockCompletedLaps, SWAP_CLOCK_INTERVAL_SECONDS.length - 1)];
   }
 
   private drawSecondClock(elapsedSeconds: number) {
@@ -5197,12 +5415,15 @@ class MainScene extends Phaser.Scene {
       isTouchingLadder: this.overlapsLadder(x, y),
       isInsideHealRoom: this.overlapsRoom(HEAL_ROOM_CONFIG, x, y),
       isInsideDriveRoom: this.overlapsRoom(DRIVE_ROOM_CONFIG, x, y),
+      isInsideWorkshopRoom: this.overlapsRoom(WORKSHOP_ROOM_CONFIG, x, y),
       isInsideRepoFullRoom: this.isRepoRoomFull() && this.overlapsRoom(REPO_ROOM_CONFIG, x, y),
       isInsideOuterWrongRoom: this.overlapsMask(OUTER_WRONG_MASK_ID, x, y),
+      isInsideBurningRoom: this.getOverlappingBurningRoom(x, y) !== undefined,
       isVerticalInputPressed,
       isDriveRoomWrong: this.isDriveRoomWrong(),
       isOuterWrong: this.isOuterWrong,
-      isRepairInputPressed
+      isRepairInputPressed,
+      hasWorkshopResources: this.hasWorkshopResources()
     };
   }
 
@@ -5213,6 +5434,11 @@ class MainScene extends Phaser.Scene {
 
     if (this.playerState === 'Climbing') {
       this.liftPlayerOutOfLadder();
+    }
+
+    if (this.playerState === 'Firefighting') {
+      this.playerFirefightingRoom = undefined;
+      this.setPlayerProgress(0);
     }
 
     this.playerState = nextState;
@@ -5226,6 +5452,11 @@ class MainScene extends Phaser.Scene {
 
     if (this.secondPlayerState === 'Climbing') {
       this.liftSecondPlayerOutOfLadder();
+    }
+
+    if (this.secondPlayerState === 'Firefighting') {
+      this.secondPlayerFirefightingRoom = undefined;
+      this.setSecondPlayerProgress(0);
     }
 
     this.secondPlayerState = nextState;
