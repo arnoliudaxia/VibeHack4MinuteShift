@@ -21,6 +21,8 @@ const PLAYER_PROGRESS_RADIUS = 14;
 const PLAYER_PROGRESS_LINE_WIDTH = 4;
 const PLAYER_REPAIR_PROGRESS_PER_SECOND = 0.2;
 const PLAYER_REPO_PROGRESS_PER_SECOND = 0.5;
+const PLAYER_SWAP_IMPULSE_SPEED = 500;
+const PLAYER_SWAP_IMPULSE_DURATION = 1000;
 
 const PLAYER_PREFAB_CHARACTER_SCALE = 2.0872;
 const PLAYER_PREFAB_PIXELS_PER_UNIT = 30;
@@ -207,6 +209,12 @@ type PlayerHandToolAsset = {
   key: string | null;
   label: string;
   path?: string;
+};
+
+type SwapImpulseState = {
+  x: number;
+  y: number;
+  remaining: number;
 };
 
 type PlayerPanelControls = {
@@ -917,8 +925,10 @@ class MainScene extends Phaser.Scene {
   private isBgmMuted = true;
   private isGravityEnabled = true;
   private playerVelocityY = 0;
+  private playerSwapImpulse: SwapImpulseState = { x: 0, y: 0, remaining: 0 };
   private isSecondPlayerGravityEnabled = false;
   private secondPlayerVelocityY = 0;
+  private secondPlayerSwapImpulse: SwapImpulseState = { x: 0, y: 0, remaining: 0 };
   private isPlayerInsideShip = true;
   private isSecondPlayerInsideShip = false;
   private playerState: PlayerState = 'Normal';
@@ -2184,6 +2194,8 @@ class MainScene extends Phaser.Scene {
     const playerY = this.player.y;
     const wasPlayerGravityEnabled = this.isGravityEnabled;
     const wasPlayerInsideShip = this.isPlayerInsideShip;
+    const playerImpulseDirection = this.getPlayerMovementInputDirection();
+    const secondPlayerImpulseDirection = this.getSecondPlayerMovementInputDirection();
 
     this.player.setPosition(this.secondPlayer.x, this.secondPlayer.y);
     this.secondPlayer.setPosition(playerX, playerY);
@@ -2193,6 +2205,8 @@ class MainScene extends Phaser.Scene {
     this.isSecondPlayerInsideShip = wasPlayerInsideShip;
     this.playerVelocityY = 0;
     this.secondPlayerVelocityY = 0;
+    this.applySwapImpulse(this.playerSwapImpulse, playerImpulseDirection);
+    this.applySwapImpulse(this.secondPlayerSwapImpulse, secondPlayerImpulseDirection);
     this.updateGravityUi();
     this.syncPlayerPrefabVisual();
     this.syncSecondPlayerPrefabVisual();
@@ -2268,6 +2282,10 @@ class MainScene extends Phaser.Scene {
     } else {
       this.secondPlayerVelocityY = 0;
     }
+
+    const impulseDelta = this.consumeSwapImpulse(this.secondPlayerSwapImpulse, delta);
+    direction.x += impulseDelta.x;
+    direction.y += impulseDelta.y;
     this.updateSecondPlayerProgressBar();
 
     if (direction.x === 0 && direction.y === 0) {
@@ -2307,6 +2325,90 @@ class MainScene extends Phaser.Scene {
   }
 
   private onSecondPlayerInteract() {
+  }
+
+  private getPlayerMovementInputDirection() {
+    const direction = new Phaser.Math.Vector2(0, 0);
+
+    if (!this.keys) {
+      return direction;
+    }
+
+    if (this.keys.A.isDown) {
+      direction.x -= 1;
+    }
+
+    if (this.keys.D.isDown) {
+      direction.x += 1;
+    }
+
+    if (this.keys.W.isDown) {
+      direction.y -= 1;
+    }
+
+    if (this.keys.S.isDown) {
+      direction.y += 1;
+    }
+
+    return direction.lengthSq() > 0 ? direction.normalize() : direction;
+  }
+
+  private getSecondPlayerMovementInputDirection() {
+    const direction = new Phaser.Math.Vector2(0, 0);
+
+    if (!this.secondPlayerKeys) {
+      return direction;
+    }
+
+    if (this.secondPlayerKeys.LEFT.isDown) {
+      direction.x -= 1;
+    }
+
+    if (this.secondPlayerKeys.RIGHT.isDown) {
+      direction.x += 1;
+    }
+
+    if (this.secondPlayerKeys.UP.isDown) {
+      direction.y -= 1;
+    }
+
+    if (this.secondPlayerKeys.DOWN.isDown) {
+      direction.y += 1;
+    }
+
+    return direction.lengthSq() > 0 ? direction.normalize() : direction;
+  }
+
+  private applySwapImpulse(impulse: SwapImpulseState, inputDirection: Phaser.Math.Vector2) {
+    if (inputDirection.lengthSq() === 0) {
+      impulse.x = 0;
+      impulse.y = 0;
+      impulse.remaining = 0;
+      return;
+    }
+
+    impulse.x = inputDirection.x * PLAYER_SWAP_IMPULSE_SPEED;
+    impulse.y = inputDirection.y * PLAYER_SWAP_IMPULSE_SPEED;
+    impulse.remaining = PLAYER_SWAP_IMPULSE_DURATION;
+  }
+
+  private consumeSwapImpulse(impulse: SwapImpulseState, delta: number) {
+    if (impulse.remaining <= 0) {
+      return new Phaser.Math.Vector2(0, 0);
+    }
+
+    const deltaSeconds = delta / 1000;
+    const progress = impulse.remaining / PLAYER_SWAP_IMPULSE_DURATION;
+    const movement = new Phaser.Math.Vector2(impulse.x * progress * deltaSeconds, impulse.y * progress * deltaSeconds);
+
+    impulse.remaining = Math.max(impulse.remaining - delta, 0);
+
+    if (impulse.remaining === 0) {
+      impulse.x = 0;
+      impulse.y = 0;
+    }
+
+    return movement;
   }
 
   update(time: number, delta: number) {
@@ -2369,6 +2471,10 @@ class MainScene extends Phaser.Scene {
     } else {
       this.playerVelocityY = 0;
     }
+
+    const impulseDelta = this.consumeSwapImpulse(this.playerSwapImpulse, delta);
+    direction.x += impulseDelta.x;
+    direction.y += impulseDelta.y;
 
     if (direction.x === 0 && direction.y === 0) {
       this.syncPlayerPrefabVisual();
