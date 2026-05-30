@@ -52,6 +52,13 @@ const ROCK_WARNING_SIGN_SIZE = 72;
 const ROCK_WARNING_SIGN_X = 1672-ROCK_WARNING_SIGN_SIZE;
 const ROCK_WARNING_SIGN_Y = 140;
 const WARNING_SIGN_BLINK_SPEED = 5;
+const SNOW_NOISE_TEXTURE_KEY = 'snow-noise-texture';
+const SNOW_NOISE_TILE_SIZE = 256;
+const SNOW_NOISE_DOTS = 5600;
+const SNOW_NOISE_ALPHA = 0.72;
+const SNOW_NOISE_BASE_BLUR_ALPHA = 0.36;
+const SNOW_NOISE_FLICKER_INTERVAL = 135;
+const SNOW_NOISE_RANDOM_JITTER = 180;
 
 // 陨石设置
 const ASTEROID_MIN_SPAWN_DELAY = 300;
@@ -73,6 +80,13 @@ const POWER_CRYSTAL_WIDTH = 72;
 const POWER_CRYSTAL_HEIGHT = 80;
 const POWER_CRYSTAL_X = 814 + POWER_CRYSTAL_WIDTH / 2;
 const POWER_CRYSTAL_Y = 645 + POWER_CRYSTAL_HEIGHT / 2;
+const RESOURCE_COUNTER_MAX = 3;
+const RESOURCE_COUNTER_BOX_WIDTH = 72;
+const RESOURCE_COUNTER_BOX_HEIGHT = 92;
+const RESOURCE_COUNTER_ICON_SIZE = 42;
+const RESOURCE_COUNTER_LEFT_X = 415;
+const RESOURCE_COUNTER_RIGHT_X = 500;
+const RESOURCE_COUNTER_Y = 655;
 
 const EXPLOSION_FRAME_KEYS = [
   'explosion1',
@@ -161,6 +175,12 @@ type AsteroidSprite = Phaser.GameObjects.Image & {
 };
 
 type AsteroidCollisionKind = 'metalDebris' | 'iceCrystal';
+type ResourceCounterKind = AsteroidCollisionKind;
+
+type ResourceCounterUi = {
+  container: Phaser.GameObjects.Container;
+  text: Phaser.GameObjects.Text;
+};
 
 type AsteroidAsset = {
   key: string;
@@ -876,6 +896,10 @@ class MainScene extends Phaser.Scene {
   private outerRepairText?: Phaser.GameObjects.Text;
   private driveWarningSign?: Phaser.GameObjects.Image;
   private rockWarningSign?: Phaser.GameObjects.Image;
+  private snowNoiseOverlay?: Phaser.GameObjects.TileSprite;
+  private snowNoiseBaseLayer?: Phaser.GameObjects.TileSprite;
+  private snowNoiseFlickerTimer = 0;
+  private snowNoisePulseState = false;
   private driveWarningBlinkTime = 0;
   private driveStateButton?: Phaser.GameObjects.Rectangle;
   private driveSelectedText?: Phaser.GameObjects.Text;
@@ -884,6 +908,11 @@ class MainScene extends Phaser.Scene {
   private repoSelectedText?: Phaser.GameObjects.Text;
   private currentRepoRoomOption = 'Full';
   private powerCrystalSprite?: Phaser.GameObjects.Sprite;
+  private resourceCounters = new Map<ResourceCounterKind, ResourceCounterUi>();
+  private resourceCounts: Record<ResourceCounterKind, number> = {
+    metalDebris: 0,
+    iceCrystal: 0
+  };
   private bgm?: VolumeSound;
   private isBgmMuted = true;
   private isGravityEnabled = true;
@@ -1083,6 +1112,8 @@ class MainScene extends Phaser.Scene {
     const scale = Math.max(width / background.width, height / background.height);
     background.setScale(scale).setScrollFactor(0);
 
+    this.createSnowNoiseOverlay(width, height);
+
     this.add
       .image(width / 2, height / 2, HEAL_ROOM_CONFIG.defaultTextureKey)
       .setDisplaySize(SCENE_WIDTH * scale, SCENE_HEIGHT * scale)
@@ -1161,6 +1192,8 @@ class MainScene extends Phaser.Scene {
     this.powerCrystalSprite.on(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
       this.powerCrystalSprite?.setTexture(POWER_CRYSTAL_FRAME_KEYS[0]);
     });
+
+    this.createResourceCounters();
 
     const collisionOverlay = this.createCollisionDebugOverlay(scale);
 
@@ -2003,6 +2036,145 @@ class MainScene extends Phaser.Scene {
     this.setPlayerHandTool(index);
   }
 
+  private createSnowNoiseOverlay(width: number, height: number) {
+    if (!this.textures.exists(SNOW_NOISE_TEXTURE_KEY)) {
+      const noiseGraphics = this.add.graphics({ x: 0, y: 0 }).setVisible(false);
+      noiseGraphics.fillStyle(0x020617, 0.52);
+      noiseGraphics.fillRect(0, 0, SNOW_NOISE_TILE_SIZE, SNOW_NOISE_TILE_SIZE);
+
+      for (let index = 0; index < SNOW_NOISE_DOTS; index += 1) {
+        const x = Phaser.Math.Between(0, SNOW_NOISE_TILE_SIZE - 1);
+        const y = Phaser.Math.Between(0, SNOW_NOISE_TILE_SIZE - 1);
+        const size = Phaser.Math.FloatBetween(0.8, 3.2);
+        const isBrightSpeck = Phaser.Math.Between(0, 100) > 18;
+        const alpha = isBrightSpeck ? Phaser.Math.FloatBetween(0.55, 1) : Phaser.Math.FloatBetween(0.3, 0.82);
+        const shade = isBrightSpeck
+          ? Phaser.Display.Color.GetColor(
+              Phaser.Math.Between(235, 255),
+              Phaser.Math.Between(240, 255),
+              Phaser.Math.Between(245, 255)
+            )
+          : Phaser.Display.Color.GetColor(
+              Phaser.Math.Between(6, 26),
+              Phaser.Math.Between(8, 34),
+              Phaser.Math.Between(14, 48)
+            );
+
+        noiseGraphics.fillStyle(shade, alpha);
+        noiseGraphics.fillRect(x, y, size, size);
+      }
+
+      for (let index = 0; index < 780; index += 1) {
+        const x = Phaser.Math.Between(0, SNOW_NOISE_TILE_SIZE - 1);
+        const y = Phaser.Math.Between(0, SNOW_NOISE_TILE_SIZE - 1);
+        const width = Phaser.Math.Between(6, 48);
+        const alpha = Phaser.Math.FloatBetween(0.08, 0.42);
+
+        noiseGraphics.fillStyle(Phaser.Display.Color.GetColor(245, 248, 255), alpha);
+        noiseGraphics.fillRect(x, y, width, 1);
+      }
+
+      noiseGraphics.generateTexture(SNOW_NOISE_TEXTURE_KEY, SNOW_NOISE_TILE_SIZE, SNOW_NOISE_TILE_SIZE);
+      noiseGraphics.destroy();
+    }
+
+    this.snowNoiseBaseLayer = this.add
+      .tileSprite(0, 0, width, height, SNOW_NOISE_TEXTURE_KEY)
+      .setOrigin(0, 0)
+      .setScrollFactor(0)
+      .setDepth(9990)
+      .setAlpha(SNOW_NOISE_BASE_BLUR_ALPHA)
+      .setTint(0x1e3a5f)
+      .setBlendMode(Phaser.BlendModes.MULTIPLY);
+
+    this.snowNoiseOverlay = this.add
+      .tileSprite(0, 0, width, height, SNOW_NOISE_TEXTURE_KEY)
+      .setOrigin(0, 0)
+      .setScrollFactor(0)
+      .setDepth(9991)
+      .setAlpha(SNOW_NOISE_ALPHA)
+      .setTint(0x9fb2ca)
+      .setBlendMode(Phaser.BlendModes.NORMAL);
+
+    this.setSnowNoiseOverlayVisible(false);
+  }
+
+  private setSnowNoiseOverlayVisible(isVisible: boolean) {
+    this.snowNoiseBaseLayer?.setVisible(isVisible);
+    this.snowNoiseOverlay?.setVisible(isVisible);
+    this.snowNoiseFlickerTimer = 0;
+  }
+
+  private createResourceCounters() {
+    this.createResourceCounter('iceCrystal', RESOURCE_COUNTER_LEFT_X, RESOURCE_COUNTER_Y);
+    this.createResourceCounter('metalDebris', RESOURCE_COUNTER_RIGHT_X, RESOURCE_COUNTER_Y);
+  }
+
+  private createResourceCounter(kind: ResourceCounterKind, x: number, y: number) {
+    const container = this.add.container(x, y).setDepth(160);
+    const box = this.add
+      .rectangle(0, 0, RESOURCE_COUNTER_BOX_WIDTH, RESOURCE_COUNTER_BOX_HEIGHT, 0x07111f, 0.78)
+      .setStrokeStyle(3, 0x93c5fd, 0.92);
+    const divider = this.add
+      .rectangle(0, 18, RESOURCE_COUNTER_BOX_WIDTH - 12, 2, 0x93c5fd, 0.45)
+      .setOrigin(0.5, 0.5);
+    const icon = this.add
+      .image(0, -20, kind)
+      .setDisplaySize(RESOURCE_COUNTER_ICON_SIZE, RESOURCE_COUNTER_ICON_SIZE);
+    const text = this.add
+      .text(0, 28, `${this.resourceCounts[kind]}/${RESOURCE_COUNTER_MAX}`, {
+        fontFamily: 'Arial, Helvetica, sans-serif',
+        fontSize: '22px',
+        color: '#f8fafc',
+        stroke: '#020617',
+        strokeThickness: 4
+      })
+      .setOrigin(0.5);
+
+    container.add([box, divider, icon, text]);
+    this.resourceCounters.set(kind, { container, text });
+  }
+
+  private collectResource(kind: ResourceCounterKind) {
+    this.resourceCounts[kind] = Math.min(this.resourceCounts[kind] + 1, RESOURCE_COUNTER_MAX);
+    this.resourceCounters.get(kind)?.text.setText(`${this.resourceCounts[kind]}/${RESOURCE_COUNTER_MAX}`);
+  }
+
+  private updateSnowNoiseOverlay(delta: number) {
+    if (!this.snowNoiseOverlay || !this.snowNoiseBaseLayer) {
+      return;
+    }
+
+    this.snowNoiseFlickerTimer += delta;
+
+    if (this.snowNoiseFlickerTimer < SNOW_NOISE_FLICKER_INTERVAL) {
+      return;
+    }
+
+    this.snowNoiseFlickerTimer = 0;
+
+    this.snowNoisePulseState = !this.snowNoisePulseState;
+
+    const overlayJitterX = Phaser.Math.Between(-SNOW_NOISE_RANDOM_JITTER, SNOW_NOISE_RANDOM_JITTER);
+    const overlayJitterY = Phaser.Math.Between(-SNOW_NOISE_RANDOM_JITTER, SNOW_NOISE_RANDOM_JITTER);
+    const baseJitterX = Phaser.Math.Between(-SNOW_NOISE_RANDOM_JITTER, SNOW_NOISE_RANDOM_JITTER);
+    const baseJitterY = Phaser.Math.Between(-SNOW_NOISE_RANDOM_JITTER, SNOW_NOISE_RANDOM_JITTER);
+    const overlayAlpha = this.snowNoisePulseState ? SNOW_NOISE_ALPHA + 0.04 : SNOW_NOISE_ALPHA - 0.06;
+    const baseAlpha = this.snowNoisePulseState ? SNOW_NOISE_BASE_BLUR_ALPHA + 0.05 : SNOW_NOISE_BASE_BLUR_ALPHA - 0.05;
+
+    this.snowNoiseOverlay
+      .setTilePosition(overlayJitterX, overlayJitterY)
+      .setAlpha(overlayAlpha)
+      .setScale(1, 1)
+      .setAngle(0);
+
+    this.snowNoiseBaseLayer
+      .setTilePosition(baseJitterX, baseJitterY)
+      .setAlpha(baseAlpha)
+      .setScale(1, 1)
+      .setAngle(0);
+  }
+
   private swapPlayerPositions() {
     if (!this.player || !this.secondPlayer) {
       return;
@@ -2140,6 +2312,7 @@ class MainScene extends Phaser.Scene {
   update(time: number, delta: number) {
     this.updateAsteroids(delta);
     this.updateAliens(delta);
+    this.updateSnowNoiseOverlay(delta);
     this.updateDriveWarningSign(delta);
 
     if (this.keys && Phaser.Input.Keyboard.JustDown(this.keys.H)) {
@@ -2821,10 +2994,12 @@ class MainScene extends Phaser.Scene {
   }
 
   private onMetalDebrisHitPlayer() {
+    this.collectResource('metalDebris');
     this.damagePlayer(10);
   }
 
   private onIceCrystalHitPlayer() {
+    this.collectResource('iceCrystal');
     this.damagePlayer(7);
   }
 
@@ -2837,6 +3012,7 @@ class MainScene extends Phaser.Scene {
   private setOuterWrong(isWrong: boolean) {
     this.isOuterWrong = isWrong;
     this.outerWrongOverlay?.setVisible(isWrong);
+    this.setSnowNoiseOverlayVisible(isWrong);
     this.updateOuterWrongUi();
   }
 
