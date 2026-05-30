@@ -94,6 +94,26 @@ const ASTEROID_ASSETS: AsteroidAsset[] = [
   { key: 'iceCrystal', path: '/assets/scene/SpcaeElements/冰晶.png', lockAlpha: true, collisionKind: 'iceCrystal' }
 ];
 
+type AlienSprite = Phaser.GameObjects.Container & {
+  velocityX: number;
+  velocityY: number;
+  speed: number;
+  damageCooldown: number;
+  hitRadius: number;
+  knockbackX: number;
+  knockbackY: number;
+  repelledByHit: boolean;
+};
+
+const ALIEN_MAX_SPAWN_DELAY = 5200;
+const ALIEN_MIN_SPAWN_DELAY = 2200;
+const ALIEN_SPEED = 155;
+const ALIEN_HIT_DISTANCE = 36;
+const ALIEN_CONTACT_DAMAGE = 25;
+const ALIEN_TARGET_RETICLE_SIZE = 30;
+const ALIEN_KNOCKBACK_FORCE = 2400;
+const ALIEN_OFFSCREEN_PADDING = 90;
+
 // 操控
 
 type PlayerKeys = {
@@ -888,6 +908,11 @@ class MainScene extends Phaser.Scene {
   private timerText?: Phaser.GameObjects.Text;
   private secondClock?: Phaser.GameObjects.Graphics;
   private asteroids: AsteroidSprite[] = [];
+  private alienSprites: AlienSprite[] = [];
+  private alienSpawnTimer = 0;
+  private nextAlienSpawnDelay = 0;
+  private alienReticle?: Phaser.GameObjects.Image;
+  private alienDamageStates = new WeakMap<AlienSprite, boolean>();
   private asteroidSpawnTimer = 0;
   private nextAsteroidSpawnDelay = 0;
   private pixelAsteroidLaneSpawnTimer = 0;
@@ -908,6 +933,8 @@ class MainScene extends Phaser.Scene {
     this.load.image('background', '/assets/scene/spaceShip.png');
     this.load.image('collision', '/assets/scene/physic.png');
     this.load.image('outerWrong', '/assets/scene/ShipRoom/OuterWrong.png');
+    this.load.image('alien', '/assets/scene/Alien/外星人.png');
+    this.load.image('alienReticle', '/assets/scene/Alien/瞄准.png');
     this.load.image('warningSign', '/assets/VFX/warningSign.png');
     this.load.image('warningSignRock', '/assets/VFX/warningSignRock.png');
     EXPLOSION_FRAME_KEYS.forEach((key, index) => {
@@ -964,6 +991,7 @@ class MainScene extends Phaser.Scene {
     const spaceE = this.add.image(width / 2, height / 2, 'spaceE');
     const spaceEScale = Math.max(width / spaceE.width, height / spaceE.height);
     spaceE.setScale(spaceEScale).setScrollFactor(0);
+    this.nextAlienSpawnDelay = Phaser.Math.Between(ALIEN_MIN_SPAWN_DELAY, ALIEN_MAX_SPAWN_DELAY);
     this.nextAsteroidSpawnDelay = Phaser.Math.Between(ASTEROID_MIN_SPAWN_DELAY, ASTEROID_MAX_SPAWN_DELAY);
     this.nextPixelAsteroidLaneSpawnDelay = Phaser.Math.Between(
       PIXEL_ASTEROID_LANE_MIN_SPAWN_DELAY,
@@ -1080,6 +1108,7 @@ class MainScene extends Phaser.Scene {
     this.playerPrefabVisual = this.createPlayerPrefabVisual(this.player.x, this.player.y);
     this.playerHealthBar = this.add.graphics();
     this.updatePlayerHealthBar();
+    this.updatePlayerSpeedUi();
     this.playerProgressBar = this.add.graphics();
     this.playerProgressBar.setVisible(false);
     this.updatePlayerProgressBar();
@@ -1509,6 +1538,7 @@ class MainScene extends Phaser.Scene {
 
   update(time: number, delta: number) {
     this.updateAsteroids(delta);
+    this.updateAliens(delta);
     this.updateDriveWarningSign(delta);
 
     if (this.keys && Phaser.Input.Keyboard.JustDown(this.keys.H)) {
@@ -1528,6 +1558,7 @@ class MainScene extends Phaser.Scene {
     this.updateHealing(delta);
 
     const direction = new Phaser.Math.Vector2(0, 0);
+    const healthSpeedMultiplier = this.getPlayerHealthSpeedMultiplier();
 
     if (this.keys.A.isDown) {
       direction.x -= 1;
@@ -1550,7 +1581,7 @@ class MainScene extends Phaser.Scene {
     }
 
     if (direction.lengthSq() > 0) {
-      direction.normalize().scale(PLAYER_SPEED * (delta / 1000));
+      direction.normalize().scale(PLAYER_SPEED * healthSpeedMultiplier * (delta / 1000));
     }
 
     if (this.isGravityEnabled) {
@@ -1726,6 +1757,86 @@ class MainScene extends Phaser.Scene {
     this.playerPrefabVisual.setPosition(this.player.x, this.player.y);
   }
 
+  private updateAliens(delta: number) {
+    if (!this.player) {
+      return;
+    }
+
+    this.alienSpawnTimer += delta;
+
+    if (this.alienSpawnTimer >= this.nextAlienSpawnDelay && this.alienSprites.length === 0) {
+      this.spawnAlien();
+      this.alienSpawnTimer = 0;
+      this.nextAlienSpawnDelay = Phaser.Math.Between(ALIEN_MIN_SPAWN_DELAY, ALIEN_MAX_SPAWN_DELAY);
+    }
+
+    const deltaSeconds = delta / 1000;
+
+    for (let index = this.alienSprites.length - 1; index >= 0; index -= 1) {
+      const alien = this.alienSprites[index];
+      const target = this.player;
+      const dx = target.x - alien.x;
+      const dy = target.y - alien.y;
+      const distance = Math.max(Math.hypot(dx, dy), 0.001);
+      const isColliding = distance <= ALIEN_HIT_DISTANCE + alien.hitRadius;
+      const approachSpeed = alien.repelledByHit ? alien.speed * 1.65 : alien.speed;
+      const moveX = (dx / distance) * approachSpeed * deltaSeconds;
+      const moveY = (dy / distance) * approachSpeed * deltaSeconds;
+
+      alien.velocityX = moveX / deltaSeconds;
+      alien.velocityY = moveY / deltaSeconds;
+
+      if (alien.repelledByHit) {
+        alien.x += alien.knockbackX * deltaSeconds;
+        alien.y += alien.knockbackY * deltaSeconds;
+        alien.knockbackX *= 0.9;
+        alien.knockbackY *= 0.9;
+
+        if (Math.hypot(alien.knockbackX, alien.knockbackY) < 20) {
+          alien.repelledByHit = false;
+          alien.knockbackX = 0;
+          alien.knockbackY = 0;
+        }
+      } else {
+        alien.x += moveX;
+        alien.y += moveY;
+      }
+
+      alien.rotation = Phaser.Math.Angle.Between(alien.x, alien.y, target.x, target.y) + Math.PI / 2;
+
+      if (this.alienReticle) {
+        this.alienReticle.setVisible(this.alienSprites.length > 0);
+        this.alienReticle.setPosition(target.x, target.y);
+      }
+
+      if (isColliding) {
+        const wasHitRecently = this.alienDamageStates.get(alien) === true;
+
+        if (!wasHitRecently) {
+          this.damagePlayer(ALIEN_CONTACT_DAMAGE);
+          this.alienDamageStates.set(alien, true);
+        }
+
+        const pushDirection = new Phaser.Math.Vector2(alien.x - target.x, alien.y - target.y).normalize();
+        alien.repelledByHit = true;
+        alien.knockbackX = pushDirection.x * ALIEN_KNOCKBACK_FORCE;
+        alien.knockbackY = pushDirection.y * ALIEN_KNOCKBACK_FORCE;
+      } else {
+        this.alienDamageStates.set(alien, false);
+      }
+
+      if (
+        alien.x < -ALIEN_OFFSCREEN_PADDING ||
+        alien.x > this.scale.width + ALIEN_OFFSCREEN_PADDING ||
+        alien.y < -ALIEN_OFFSCREEN_PADDING ||
+        alien.y > this.scale.height + ALIEN_OFFSCREEN_PADDING
+      ) {
+        this.destroyAlien(alien);
+        this.alienSprites.splice(index, 1);
+      }
+    }
+  }
+
   private updateAsteroids(delta: number) {
     this.asteroidSpawnTimer += delta;
     this.pixelAsteroidLaneSpawnTimer += delta;
@@ -1818,6 +1929,42 @@ class MainScene extends Phaser.Scene {
     );
   }
 
+  private spawnAlien() {
+    if (!this.player) {
+      return;
+    }
+
+    const spawnSide = Phaser.Utils.Array.GetRandom(['top', 'left', 'right'] as const);
+    const alien = this.add.container(0, 0) as AlienSprite;
+    const alienSprite = this.add.image(0, 0, 'alien').setDisplaySize(70, 70);
+
+    alien.add(alienSprite);
+    alien.setDepth(20);
+    alien.speed = ALIEN_SPEED;
+    alien.damageCooldown = 0;
+    alien.hitRadius = 22;
+    alien.knockbackX = 0;
+    alien.knockbackY = 0;
+    alien.repelledByHit = false;
+    this.alienDamageStates.set(alien, false);
+    if (!this.alienReticle) {
+      this.alienReticle = this.add.image(0, 0, 'alienReticle').setDisplaySize(40, 40).setDepth(21).setVisible(false);
+    }
+
+    const margin = ALIEN_OFFSCREEN_PADDING;
+
+    if (spawnSide === 'top') {
+      alien.setPosition(Phaser.Math.Between(margin, this.scale.width - margin), -margin);
+    } else if (spawnSide === 'left') {
+      alien.setPosition(-margin, Phaser.Math.Between(margin, this.scale.height - margin));
+    } else {
+      alien.setPosition(this.scale.width + margin, Phaser.Math.Between(margin, this.scale.height - margin));
+    }
+
+    this.alienSprites.push(alien);
+    return alien;
+  }
+
   private createAsteroid(
     textureKey: string,
     y: number,
@@ -1903,10 +2050,39 @@ class MainScene extends Phaser.Scene {
     });
   }
 
+  private damagePlayer(amount: number) {
+    if (!this.player) {
+      return;
+    }
+
+    this.setPlayerHealth(this.playerHealth - amount);
+    this.updatePlayerSpeedUi();
+
+    this.player?.clear();
+    this.player
+      .fillStyle(this.playerHealth <= 0 ? 0xff6b6b : 0x38bdf8, 1)
+      .fillRoundedRect(-PLAYER_WIDTH / 2, -PLAYER_HEIGHT / 2, PLAYER_WIDTH, PLAYER_HEIGHT, PLAYER_WIDTH / 2)
+      .lineStyle(3, this.playerHealth <= 0 ? 0xffd1d1 : 0xe0f2fe, 1)
+      .strokeRoundedRect(-PLAYER_WIDTH / 2, -PLAYER_HEIGHT / 2, PLAYER_WIDTH, PLAYER_HEIGHT, PLAYER_WIDTH / 2);
+  }
+
+  private destroyAlien(alien: AlienSprite) {
+    this.alienDamageStates.delete(alien);
+    alien.destroy();
+
+    if (this.alienSprites.length === 0) {
+      this.alienReticle?.setVisible(false);
+      this.alienSpawnTimer = 0;
+      this.nextAlienSpawnDelay = Phaser.Math.Between(ALIEN_MIN_SPAWN_DELAY, ALIEN_MAX_SPAWN_DELAY);
+    }
+  }
+
   private onMetalDebrisHitPlayer() {
+    this.damagePlayer(10);
   }
 
   private onIceCrystalHitPlayer() {
+    this.damagePlayer(7);
   }
 
   private onPixelAsteroidLaneReachedTriggerX(x: number, y: number) {
@@ -1972,6 +2148,22 @@ class MainScene extends Phaser.Scene {
   private setPlayerHealth(health: number) {
     this.playerHealth = Phaser.Math.Clamp(health, 0, PLAYER_MAX_HEALTH);
     this.updatePlayerHealthBar();
+  }
+
+  private getPlayerHealthSpeedMultiplier() {
+    const missingHealth = PLAYER_MAX_HEALTH - this.playerHealth;
+
+    return Phaser.Math.Clamp(1 - missingHealth / 200, 0.55, 1);
+  }
+
+  private updatePlayerSpeedUi() {
+    if (!this.stateText) {
+      return;
+    }
+
+    const speedPercent = Math.round(this.getPlayerHealthSpeedMultiplier() * 100);
+
+    this.stateText.setText(`${this.playerState}${this.playerHealth < PLAYER_MAX_HEALTH ? ` · ${speedPercent}%` : ''}`);
   }
 
   private updateHealing(delta: number) {
@@ -2604,8 +2796,8 @@ class MainScene extends Phaser.Scene {
       this.isWhiteCollisionEnabled = false;
       this.playerVelocityY = 0;
       this.updateGravityUi();
-      this.stateText.setText('Climbing');
       this.stateText.setColor('#f97316');
+      this.updatePlayerSpeedUi();
       this.updatePlayerProgressBar();
       return;
     }
@@ -2615,8 +2807,8 @@ class MainScene extends Phaser.Scene {
       this.isWhiteCollisionEnabled = true;
       this.playerVelocityY = 0;
       this.updateGravityUi();
-      this.stateText.setText('Healing');
       this.stateText.setColor('#38bdf8');
+      this.updatePlayerSpeedUi();
       this.updatePlayerProgressBar();
       return;
     }
@@ -2626,8 +2818,8 @@ class MainScene extends Phaser.Scene {
       this.isWhiteCollisionEnabled = true;
       this.playerVelocityY = 0;
       this.updateGravityUi();
-      this.stateText.setText('Driving');
       this.stateText.setColor('#22c55e');
+      this.updatePlayerSpeedUi();
       this.updatePlayerProgressBar();
       return;
     }
@@ -2637,8 +2829,8 @@ class MainScene extends Phaser.Scene {
       this.isWhiteCollisionEnabled = true;
       this.playerVelocityY = 0;
       this.updateGravityUi();
-      this.stateText.setText('Driving-Repairing');
       this.stateText.setColor('#86efac');
+      this.updatePlayerSpeedUi();
       this.updatePlayerProgressBar();
       return;
     }
@@ -2648,8 +2840,8 @@ class MainScene extends Phaser.Scene {
       this.isWhiteCollisionEnabled = true;
       this.playerVelocityY = 0;
       this.updateGravityUi();
-      this.stateText.setText('Repoing');
       this.stateText.setColor('#facc15');
+      this.updatePlayerSpeedUi();
       this.updatePlayerProgressBar();
       return;
     }
@@ -2658,8 +2850,8 @@ class MainScene extends Phaser.Scene {
     this.isWhiteCollisionEnabled = true;
     this.playerVelocityY = 0;
     this.updateGravityUi();
-    this.stateText.setText('Normal');
     this.stateText.setColor('#ffffff');
+    this.updatePlayerSpeedUi();
     this.updatePlayerProgressBar();
   }
 
